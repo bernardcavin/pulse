@@ -9,6 +9,13 @@ export const SampleFormat = {
 
 export type SampleFormat = typeof SampleFormat[keyof typeof SampleFormat];
 
+export interface SegyData {
+    data: Float32Array; // Flattened data
+    headers: SegyTraceHeader[];
+    samplesPerTrace: number;
+    numTraces: number;
+}
+
 export interface SegyBinaryHeader {
     jobId: number;
     lineKey: number;
@@ -40,77 +47,162 @@ export interface SegyBinaryHeader {
 }
 
 export interface SegyTraceHeader {
+    // Bytes 1-4: Trace sequence number within line
     traceSequenceLine: number;
+    // Bytes 5-8: Trace sequence number within reel
     traceSequenceFile: number;
+    // Bytes 9-12: FFID - Original field record number
     fieldRecord: number;
+    // Bytes 13-16: Trace number within field record
     traceNumber: number;
+    // Bytes 17-20: SP - Energy source point number
     energySourcePoint: number;
+    // Bytes 21-24: CDP ensemble number
     cdp: number;
+    // Bytes 25-28: Trace number
     cdpTrace: number;
+    // Bytes 29-30: Trace identification code
     traceId: number;
+    // Bytes 31-32: Number of vertically summed traces
     nSummedTraces: number;
+    // Bytes 33-34: Number of horizontally stacked traces
     nStackedTraces: number;
+    // Bytes 35-36: Data use (1-production, 2-test)
     dataUse: number;
+    // Bytes 37-40: Distance from source point to receiver group
     offset: number;
+    // Bytes 41-44: Receiver group elevation
     receiverElevation: number;
+    // Bytes 45-48: Surface elevation at source
     sourceElevation: number;
+    // Bytes 49-52: Source depth below surface
     sourceDepth: number;
+    // Bytes 53-56: Datum elevation at receiver group
     receiverDatumElevation: number;
+    // Bytes 57-60: Datum elevation at source
     sourceDatumElevation: number;
+    // Bytes 61-64: Water depth at source
     sourceWaterDepth: number;
+    // Bytes 65-68: Water depth at group
     receiverWaterDepth: number;
+    // Bytes 69-70: Scalar to all elevations & depths
     scalarElevation: number;
+    // Bytes 71-72: Scalar to all coordinates
     scalarCoordinates: number;
+    // Bytes 73-76: Source X coordinate
     sourceX: number;
+    // Bytes 77-80: Source Y coordinate
     sourceY: number;
+    // Bytes 81-84: Group X coordinate
     groupX: number;
+    // Bytes 85-88: Group Y coordinate
     groupY: number;
+    // Bytes 89-90: Coordinate units (1-len/m, 2-sec/arc)
     coordinateUnits: number;
+    // Bytes 91-92: Weathering velocity
     weatheringVelocity: number;
+    // Bytes 93-94: Subweathering velocity
     subweatheringVelocity: number;
+    // Bytes 95-96: Uphole time at source
     sourceUpholeTime: number;
+    // Bytes 97-98: Uphole time at group
     groupUpholeTime: number;
+    // Bytes 99-100: Source static correction
     sourceStaticCorrection: number;
+    // Bytes 101-102: Group static correction
     groupStaticCorrection: number;
+    // Bytes 103-104: Total static applied
     totalStaticApplied: number;
+    // Bytes 105-106: Lag time A
     lagTimeA: number;
+    // Bytes 107-108: Lag time B
     lagTimeB: number;
+    // Bytes 109-110: Delay recording time
     delayRecordingTime: number;
+    // Bytes 111-112: Mute time start
     muteTimeStart: number;
+    // Bytes 113-114: Mute time end
     muteTimeEnd: number;
+    // Bytes 115-116: Number of samples in this trace
     samplesInThisTrace: number;
+    // Bytes 117-118: Sample interval (µs)
     sampleInterval: number;
+    // Bytes 119-120: Gain type of field instruments
     gainType: number;
-    instrumentGainConstant: number;
+    // Bytes 121-122: Instrument gain
     instrumentInitialGain: number;
+    // Bytes 123-124: Instrument gain constant
+    instrumentGainConstant: number;
+    // Bytes 125-126: Correlated (1-yes / 2-no)
     correlated: number;
+    // Bytes 127-128: Sweep frequency at start
     sweepFrequencyStart: number;
+    // Bytes 129-130: Sweep frequency at end
     sweepFrequencyEnd: number;
+    // Bytes 131-132: Sweep length (ms)
     sweepLength: number;
+    // Bytes 133-134: Sweep type (1-lin,2-parabol,3-exp,4-other)
     sweepType: number;
+    // Bytes 135-136: Sweep trace taper length at start (ms)
     sweepTraceTaperLengthStart: number;
+    // Bytes 137-138: Sweep trace taper length at end (ms)
     sweepTraceTaperLengthEnd: number;
+    // Bytes 139-140: Taper type (1-lin,2-cos²,3-other)
     taperType: number;
+    // Bytes 141-142: Alias filter frequency (if used)
     aliasFilterFrequency: number;
+    // Bytes 143-144: Alias filter slope
     aliasFilterSlope: number;
+    // Bytes 145-146: Notch filter frequency (if used)
     notchFilterFrequency: number;
+    // Bytes 147-148: Notch filter slope
     notchFilterSlope: number;
+    // Bytes 149-150: Low-cut frequency (if used)
     lowCutFrequency: number;
+    // Bytes 151-152: High-cut frequency (if used)
     highCutFrequency: number;
+    // Bytes 153-154: Low-cut slope
     lowCutSlope: number;
+    // Bytes 155-156: High-cut slope
     highCutSlope: number;
+    // Bytes 157-158: Year data recorded
     yearDataRecorded: number;
+    // Bytes 159-160: Day of year
     dayOfYear: number;
+    // Bytes 161-162: Hour of day
     hour: number;
+    // Bytes 163-164: Minute of hour
     minute: number;
+    // Bytes 165-166: Second of minute
     second: number;
+    // Bytes 167-168: Time basis code (1-local,2-GMT,3-other)
     timeBasisCode: number;
+    // Bytes 169-170: Trace weighting factor
     traceWeightingFactor: number;
+    // Bytes 171-172: Geophone group number of roll sw pos 1
     geophoneGroupNumberRoll1: number;
+    // Bytes 173-174: Geophone group number of trace #1
     geophoneGroupNumberFirstTraceOriginal: number;
+    // Bytes 175-176: Geophone group number of last trace
     geophoneGroupNumberLastTraceOriginal: number;
+    // Bytes 177-178: Gap size (total # of groups dropped)
     gapSize: number;
+    // Bytes 179-180: Overtravel assoc w taper of beg/end line
     overTravel: number;
+    // Bytes 181-184: CDP X
+    cdpX: number;
+    // Bytes 185-188: CDP Y
+    cdpY: number;
+    // Bytes 189-192: Inline number
+    inlineNumber: number;
+    // Bytes 193-196: Crossline number
+    crosslineNumber: number;
+    // Bytes 197-200: Shot point number
+    shotPointNumber: number;
+    // Bytes 201-202: Shot point scalar
+    shotPointScalar: number;
+    // Bytes 203-204: Trace value measurement unit
+    traceValueMeasurementUnit: number;
 }
 
 export interface Trace {
@@ -208,8 +300,8 @@ export class SegyParser {
         return res;
     }
 
-    parseTraces(binaryHeader: SegyBinaryHeader): Trace[] {
-        const traces: Trace[] = [];
+    parseTraces(binaryHeader: SegyBinaryHeader): SegyData {
+        const headers: SegyTraceHeader[] = [];
         let offset = 3600; // 3200 + 400
         const bigEndian = false;
         const samplesPerTrace = binaryHeader.samplesPerTrace;
@@ -226,10 +318,22 @@ export class SegyParser {
         const traceDataSize = samplesPerTrace * bytesPerSample;
         const traceBlockSize = 240 + traceDataSize;
 
+        // Estimate number of traces to pre-allocate
+        // Available bytes / bytes per trace
+        const availableBytes = fileSize - 3600;
+        const numTracesEstimate = Math.floor(availableBytes / traceBlockSize);
+
+        // Allocate flattened buffer
+        // Using SharedArrayBuffer could be even better for workers, but standard Float32Array is fine for transfer
+        const totalSamples = numTracesEstimate * samplesPerTrace;
+        const allData = new Float32Array(totalSamples);
+
+        let traceIndex = 0;
+
         while (offset + traceBlockSize <= fileSize) {
             const dv = this.dataView;
 
-            // Parse Trace Header (subset of important fields)
+            // Parse Trace Header (all 76 fields according to SEG-Y standard)
             const header: SegyTraceHeader = {
                 traceSequenceLine: dv.getInt32(offset + 0, bigEndian),
                 traceSequenceFile: dv.getInt32(offset + 4, bigEndian),
@@ -272,8 +376,8 @@ export class SegyParser {
                 samplesInThisTrace: dv.getInt16(offset + 114, bigEndian),
                 sampleInterval: dv.getInt16(offset + 116, bigEndian),
                 gainType: dv.getInt16(offset + 118, bigEndian),
-                instrumentGainConstant: dv.getInt16(offset + 120, bigEndian),
-                instrumentInitialGain: dv.getInt16(offset + 122, bigEndian),
+                instrumentInitialGain: dv.getInt16(offset + 120, bigEndian),
+                instrumentGainConstant: dv.getInt16(offset + 122, bigEndian),
                 correlated: dv.getInt16(offset + 124, bigEndian),
                 sweepFrequencyStart: dv.getInt16(offset + 126, bigEndian),
                 sweepFrequencyEnd: dv.getInt16(offset + 128, bigEndian),
@@ -302,40 +406,70 @@ export class SegyParser {
                 geophoneGroupNumberLastTraceOriginal: dv.getInt16(offset + 174, bigEndian),
                 gapSize: dv.getInt16(offset + 176, bigEndian),
                 overTravel: dv.getInt16(offset + 178, bigEndian),
+                cdpX: dv.getInt32(offset + 180, bigEndian),
+                cdpY: dv.getInt32(offset + 184, bigEndian),
+                inlineNumber: dv.getInt32(offset + 188, bigEndian),
+                crosslineNumber: dv.getInt32(offset + 192, bigEndian),
+                shotPointNumber: dv.getInt32(offset + 196, bigEndian),
+                shotPointScalar: dv.getInt16(offset + 200, bigEndian),
+                traceValueMeasurementUnit: dv.getInt16(offset + 202, bigEndian),
             };
 
+            headers.push(header);
+
             // Parse Trace Data
-            const data = new Float32Array(samplesPerTrace);
+            // Write directly to the flattened array
             let dataOffset = offset + 240;
+            const startSampleIndex = traceIndex * samplesPerTrace;
 
             for (let i = 0; i < samplesPerTrace; i++) {
+                let val = 0;
                 if (sampleFormat === SampleFormat.IBM_FLOAT) {
-                    const val = dv.getUint32(dataOffset, bigEndian);
-                    data[i] = this.ibmToFloat(val);
+                    const raw = dv.getUint32(dataOffset, bigEndian);
+                    val = this.ibmToFloat(raw);
                     dataOffset += 4;
                 } else if (sampleFormat === SampleFormat.FLOAT_4_BYTE) {
-                    data[i] = dv.getFloat32(dataOffset, bigEndian);
+                    val = dv.getFloat32(dataOffset, bigEndian);
                     dataOffset += 4;
                 } else if (sampleFormat === SampleFormat.INT_4_BYTE) {
-                    data[i] = dv.getInt32(dataOffset, bigEndian);
+                    val = dv.getInt32(dataOffset, bigEndian);
                     dataOffset += 4;
                 } else if (sampleFormat === SampleFormat.INT_2_BYTE) {
-                    data[i] = dv.getInt16(dataOffset, bigEndian);
+                    val = dv.getInt16(dataOffset, bigEndian);
                     dataOffset += 2;
                 } else if (sampleFormat === SampleFormat.INT_1_BYTE) {
-                    data[i] = dv.getInt8(dataOffset);
+                    val = dv.getInt8(dataOffset);
                     dataOffset += 1;
                 } else {
-                    // Fallback or unknown
-                    data[i] = 0;
+                    // Fallback
                     dataOffset += bytesPerSample;
                 }
+                allData[startSampleIndex + i] = val;
             }
 
-            traces.push({ header, data });
             offset += traceBlockSize;
+            traceIndex++;
         }
 
-        return traces;
+        // If we overestimated, slice the array?
+        // Actually it's better to just return the whole thing or slice if there's a significant difference.
+        // Usually file size estimation is accurate for SEG-Y.
+
+        // However, if the file was truncated, traceIndex might be less than estimate.
+        if (traceIndex < numTracesEstimate) {
+            return {
+                data: allData.slice(0, traceIndex * samplesPerTrace),
+                headers,
+                samplesPerTrace,
+                numTraces: traceIndex
+            };
+        }
+
+        return {
+            data: allData,
+            headers,
+            samplesPerTrace,
+            numTraces: traceIndex
+        };
     }
 }

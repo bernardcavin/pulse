@@ -1,12 +1,15 @@
-
-import React from 'react';
-import { FileInput, Slider, FormGroup, Card, Elevation, Radio, RadioGroup, NumericInput } from '@blueprintjs/core';
+import { FileInput, Slider, Paper, Radio, NumberInput, Group, Stack, Switch, ColorInput, Fieldset, Text, Select, Tabs, Button } from '@mantine/core';
+import type { SegyData, SegyBinaryHeader } from '../utils/SegyParser';
 
 interface ControlPanelProps {
     onFileUpload: (file: File) => void;
     gain: number;
     onGainChange: (val: number) => void;
     loading: boolean;
+    segyData: SegyData | null;
+    binaryHeader: SegyBinaryHeader | null;
+    textHeader: string | null;
+    onShowFileDetails: () => void;
     displayWiggle: boolean;
     onDisplayWiggleChange: (val: boolean) => void;
     displayDensity: boolean;
@@ -25,6 +28,13 @@ interface ControlPanelProps {
     onCustomColorsChange: (val: { min: string, zero: string, max: string }) => void;
     xAxisHeader: 'trace' | 'cdp' | 'inline' | 'crossline';
     onXAxisHeaderChange: (val: 'trace' | 'cdp' | 'inline' | 'crossline') => void;
+    availableHeaders: string[]; // ['trace', 'cdp', 'inline', 'crossline'] (subset)
+    agcEnabled: boolean;
+    onAgcEnabledChange: (val: boolean) => void;
+    agcWindow: number;
+    onAgcWindowChange: (val: number) => void;
+    showGridlines: boolean;
+    onShowGridlinesChange: (val: boolean) => void;
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -32,6 +42,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     gain,
     onGainChange,
     loading,
+    segyData,
+    binaryHeader,
+    textHeader,
+    onShowFileDetails,
     displayWiggle,
     onDisplayWiggleChange,
     displayDensity,
@@ -49,230 +63,265 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     onXAxisHeaderChange,
     onColorMapChange,
     customColors,
-    onCustomColorsChange
+    onCustomColorsChange,
+    availableHeaders = ['trace'],
+    agcEnabled,
+    onAgcEnabledChange,
+    agcWindow,
+    onAgcWindowChange,
+    showGridlines,
+    onShowGridlinesChange
 }) => {
 
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (event.target.files && event.target.files.length > 0) {
-            onFileUpload(event.target.files[0]);
+    const handleFileChange = (payload: File | null) => {
+        if (payload) {
+            onFileUpload(payload);
         }
     };
 
     return (
-        <Card elevation={Elevation.TWO} style={{ padding: '20px', height: '100%', minWidth: '300px', overflowY: 'auto' }}>
-            <h3 className="bp5-heading">SEG-Y Viewer</h3>
+        <Paper shadow="xs" p={6} withBorder style={{ width: '100%', height: '160px', zIndex: 10, overflow: 'hidden' }}>
+            <Tabs defaultValue="file" variant='outline' radius="sm">
+                <Tabs.List mb={4}>
+                    <Tabs.Tab value="file" style={{ fontSize: '11px', padding: '4px 10px', height: '24px', outline: 'none' }}>File</Tabs.Tab>
+                    <Tabs.Tab value="display" style={{ fontSize: '11px', padding: '4px 10px', height: '24px', outline: 'none' }}>Display</Tabs.Tab>
+                    <Tabs.Tab value="processing" style={{ fontSize: '11px', padding: '4px 10px', height: '24px', outline: 'none' }}>Processing</Tabs.Tab>
+                </Tabs.List>
 
+                <Tabs.Panel value="file" pt={0}>
+                    <Group align="flex-start" gap="xs" style={{ height: '124px' }}>
+                        <Fieldset legend="File" p="xs" style={{ minWidth: '140px' }}>
+                            <Stack gap="xs">
+                                <FileInput
+                                    placeholder="Load .sgy"
+                                    onChange={handleFileChange}
+                                    accept=".sgy,.segy"
+                                    disabled={loading}
+                                    size="xs"
+                                    w={120}
+                                />
+                                {segyData && binaryHeader && (
+                                    <Button
+                                        variant="light"
+                                        size="xs"
+                                        onClick={onShowFileDetails}
+                                        w={120}
+                                    >
+                                        Show Details
+                                    </Button>
+                                )}
+                            </Stack>
+                        </Fieldset>
+                    </Group>
+                </Tabs.Panel>
 
-            <FormGroup label="Load SEG-Y File" labelFor="file-input">
-                <FileInput
-                    text="Choose file..."
-                    onInputChange={handleFileChange}
-                    inputProps={{ accept: ".sgy,.segy" }}
-                    disabled={loading}
-                    fill
-                />
-            </FormGroup>
+                <Tabs.Panel value="display" pt={0}>
+                    <Group align="flex-start" gap="xs">
+                        <Fieldset legend="Display Mode" p="xs">
+                            <Stack gap={4}>
+                                <Switch
+                                    label="Wiggle"
+                                    checked={displayWiggle}
+                                    onChange={(e) => onDisplayWiggleChange(e.currentTarget.checked)}
+                                    disabled={loading}
+                                    size="xs"
+                                />
+                                <Switch
+                                    label="Density"
+                                    checked={displayDensity}
+                                    onChange={(e) => onDisplayDensityChange(e.currentTarget.checked)}
+                                    disabled={loading}
+                                    size="xs"
+                                />
+                            </Stack>
+                        </Fieldset>
 
-            <FormGroup label="Display Mode">
-                <RadioGroup
-                    onChange={(e) => {
-                        const value = e.currentTarget.value;
-                        if (value === 'wiggle') {
-                            onDisplayWiggleChange(true);
-                            onDisplayDensityChange(false);
-                        } else if (value === 'density') {
-                            onDisplayWiggleChange(false);
-                            onDisplayDensityChange(true);
-                        } else {
-                            onDisplayWiggleChange(true);
-                            onDisplayDensityChange(true);
-                        }
-                    }}
-                    selectedValue={displayWiggle && displayDensity ? 'both' : displayWiggle ? 'wiggle' : 'density'}
-                    disabled={loading}
-                >
-                    <Radio label="Wiggle Trace" value="wiggle" />
-                    <Radio label="Variable Density" value="density" />
-                    <Radio label="Both" value="both" />
-                </RadioGroup>
-            </FormGroup>
-
-            <FormGroup label="Gain" labelFor="gain-slider">
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <div style={{ flex: 1 }}>
-                        <Slider
-                            min={0}
-                            max={100}
-                            stepSize={1}
-                            labelStepSize={20}
-                            labelRenderer={(value) => {
-                                // Convert slider value to actual gain for display
-                                const actualGain = Math.pow(value / 100, 2) * 10;
-                                return actualGain.toFixed(1);
-                            }}
-                            onChange={(value) => {
-                                // Exponential mapping: slider 0-100 -> gain 0-10
-                                // Using exp to give more precision at lower values
-                                const expGain = Math.pow(value / 100, 2) * 10;
-                                onGainChange(expGain);
-                            }}
-                            value={Math.sqrt(gain / 10) * 100}
-                            disabled={loading}
-                        />
-                    </div>
-                    <NumericInput
-                        value={gain}
-                        onValueChange={onGainChange}
-                        min={0}
-                        max={10}
-                        stepSize={0.1}
-                        minorStepSize={0.01}
-                        majorStepSize={1}
-                        disabled={loading}
-                        style={{ width: '80px' }}
-                    />
-                </div>
-            </FormGroup>
-
-            <FormGroup label="Wiggle Fill">
-                <RadioGroup
-                    onChange={(e) => onWiggleFillChange(e.currentTarget.value as 'none' | 'pos' | 'neg')}
-                    selectedValue={wiggleFill}
-                    disabled={loading || !displayWiggle}
-                >
-                    <Radio label="None" value="none" />
-                    <Radio label="Positive (+)" value="pos" />
-                    <Radio label="Negative (-)" value="neg" />
-                </RadioGroup>
-            </FormGroup>
-
-            <FormGroup label="Horizontal Scale (Trace Width)">
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <div style={{ flex: 1 }}>
-                        <Slider
-                            min={0.5}
-                            max={5.0}
-                            stepSize={0.1}
-                            labelStepSize={1}
-                            onChange={onScaleXChange}
-                            value={scaleX}
-                            disabled={loading}
-                        />
-                    </div>
-                    <NumericInput
-                        value={scaleX}
-                        onValueChange={onScaleXChange}
-                        min={0.5}
-                        max={5}
-                        stepSize={0.1}
-                        minorStepSize={0.01}
-                        majorStepSize={0.5}
-                        disabled={loading}
-                        style={{ width: '80px' }}
-                    />
-                </div>
-            </FormGroup>
-
-            <FormGroup label="Vertical Scale (Sample Height)">
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <div style={{ flex: 1 }}>
-                        <Slider
-                            min={0.1}
-                            max={5.0}
-                            stepSize={0.1}
-                            labelStepSize={1}
-                            onChange={onScaleYChange}
-                            value={scaleY}
-                            disabled={loading}
-                        />
-                    </div>
-                    <NumericInput
-                        value={scaleY}
-                        onValueChange={onScaleYChange}
-                        min={0.1}
-                        max={5}
-                        stepSize={0.1}
-                        minorStepSize={0.01}
-                        majorStepSize={0.5}
-                        disabled={loading}
-                        style={{ width: '80px' }}
-                    />
-
-            <FormGroup label="X-Axis Display">
-                <RadioGroup
-                    onChange={(e) => onXAxisHeaderChange(e.currentTarget.value as 'trace' | 'cdp' | 'inline' | 'crossline')}
-                    selectedValue={xAxisHeader}
-                    disabled={loading}
-                >
-                    <Radio label="Trace Number" value="trace" />
-                    <Radio label="CDP" value="cdp" />
-                    <Radio label="Inline" value="inline" />
-                    <Radio label="Crossline" value="crossline" />
-                </RadioGroup>
-            </FormGroup>
-                </div>
-            </FormGroup>
-
-            <FormGroup label="Direction">
-                <RadioGroup
-                    onChange={(e) => onReverseChange(e.currentTarget.value === 'true')}
-                    selectedValue={reverse.toString()}
-                    disabled={loading}
-                >
-                    <Radio label="Normal" value="false" />
-                    <Radio label="Reversed" value="true" />
-                </RadioGroup>
-            </FormGroup>
-
-            {displayDensity && (
-                <>
-                    <FormGroup label="Color Map">
-                        <RadioGroup
-                            onChange={(e) => onColorMapChange(e.currentTarget.value as 'grey' | 'rwb' | 'custom')}
-                            selectedValue={colorMap}
-                            disabled={loading}
-                        >
-                            <Radio label="Greyscale" value="grey" />
-                            <Radio label="Red-White-Blue" value="rwb" />
-                            <Radio label="Custom" value="custom" />
-                        </RadioGroup>
-                    </FormGroup>
-
-                    {colorMap === 'custom' && (
-                        <FormGroup label="Custom Colors">
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    Negative (Min):
-                                    <input
-                                        type="color"
-                                        value={customColors.min}
-                                        onChange={(e) => onCustomColorsChange({ ...customColors, min: e.target.value })}
+                        <Fieldset legend="Scale" p="xs">
+                            <Stack gap={4}>
+                                <Group gap="xs">
+                                    <Text size="xs">X:</Text>
+                                    <Slider
+                                        w={60}
+                                        min={0.5}
+                                        max={5.0}
+                                        step={0.1}
+                                        onChange={onScaleXChange}
+                                        value={scaleX}
                                         disabled={loading}
+                                        label={null}
+                                        size="xs"
                                     />
-                                </label>
-                                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    Zero:
-                                    <input
-                                        type="color"
-                                        value={customColors.zero}
-                                        onChange={(e) => onCustomColorsChange({ ...customColors, zero: e.target.value })}
+                                    <Text size="xs">Y:</Text>
+                                    <Slider
+                                        w={60}
+                                        min={0.1}
+                                        max={5.0}
+                                        step={0.1}
+                                        onChange={onScaleYChange}
+                                        value={scaleY}
                                         disabled={loading}
+                                        label={null}
+                                        size="xs"
                                     />
-                                </label>
-                                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    Positive (Max):
-                                    <input
-                                        type="color"
-                                        value={customColors.max}
-                                        onChange={(e) => onCustomColorsChange({ ...customColors, max: e.target.value })}
+                                </Group>
+                                <Switch
+                                    label="Gridlines"
+                                    checked={showGridlines}
+                                    onChange={(e) => onShowGridlinesChange(e.currentTarget.checked)}
+                                    disabled={loading}
+                                    size="xs"
+                                />
+                                <Select
+                                    data={[
+                                        { value: 'trace', label: 'Trace' },
+                                        { value: 'cdp', label: 'CDP', disabled: !availableHeaders.includes('cdp') },
+                                        { value: 'inline', label: 'Inline', disabled: !availableHeaders.includes('inline') },
+                                        { value: 'crossline', label: 'XLine', disabled: !availableHeaders.includes('crossline') }
+                                    ]}
+                                    value={xAxisHeader}
+                                    onChange={(val) => onXAxisHeaderChange(val as any)}
+                                    size="xs"
+                                    placeholder="X-Axis"
+                                    w={100}
+                                />
+                            </Stack>
+                        </Fieldset>
+
+                        <Fieldset legend="Wiggle" p="xs">
+                            <Radio.Group
+                                value={wiggleFill}
+                                onChange={(value) => onWiggleFillChange(value as 'none' | 'pos' | 'neg')}
+                                size="xs"
+                            >
+                                <Group gap="xs">
+                                    <Radio label="None" value="none" disabled={loading || !displayWiggle} size="xs" />
+                                    <Radio label="Pos (+)" value="pos" disabled={loading || !displayWiggle} size="xs" />
+                                    <Radio label="Neg (-)" value="neg" disabled={loading || !displayWiggle} size="xs" />
+                                </Group>
+                            </Radio.Group>
+                        </Fieldset>
+
+                        {displayDensity && (
+                            <Fieldset legend="Density" p="xs">
+                                <Stack gap={4}>
+                                    <Radio.Group
+                                        value={colorMap}
+                                        onChange={(val) => onColorMapChange(val as 'grey' | 'rwb' | 'custom')}
+                                        size="xs"
+                                    >
+                                        <Group gap="xs">
+                                            <Radio label="Grey" value="grey" disabled={loading} size="xs" />
+                                            <Radio label="RWB" value="rwb" disabled={loading} size="xs" />
+                                            <Radio label="Custom" value="custom" disabled={loading} size="xs" />
+                                        </Group>
+                                    </Radio.Group>
+                                    <Group gap="xs">
+                                        <Switch
+                                            label="Reverse"
+                                            checked={reverse}
+                                            onChange={(e) => onReverseChange(e.currentTarget.checked)}
+                                            disabled={loading}
+                                            size="xs"
+                                        />
+                                        {colorMap === 'custom' && (
+                                            <>
+                                                <ColorInput
+                                                    value={customColors.min}
+                                                    onChange={(val) => onCustomColorsChange({ ...customColors, min: val })}
+                                                    disabled={loading}
+                                                    size="xs"
+                                                    w={30}
+                                                    variant="unstyled"
+                                                    withEyeDropper={false}
+                                                />
+                                                <ColorInput
+                                                    value={customColors.zero}
+                                                    onChange={(val) => onCustomColorsChange({ ...customColors, zero: val })}
+                                                    disabled={loading}
+                                                    size="xs"
+                                                    w={30}
+                                                    variant="unstyled"
+                                                    withEyeDropper={false}
+                                                />
+                                                <ColorInput
+                                                    value={customColors.max}
+                                                    onChange={(val) => onCustomColorsChange({ ...customColors, max: val })}
+                                                    disabled={loading}
+                                                    size="xs"
+                                                    w={30}
+                                                    variant="unstyled"
+                                                    withEyeDropper={false}
+                                                />
+                                            </>
+                                        )}
+                                    </Group>
+                                </Stack>
+                            </Fieldset>
+                        )}
+                    </Group>
+                </Tabs.Panel>
+
+                <Tabs.Panel value="processing" pt={0}>
+                    <Group align="flex-start" gap="xs">
+                        <Fieldset legend="Gain" p="xs">
+                            <Stack gap={4}>
+                                <Group gap="xs" align="center">
+                                    <Text size="xs" component="label">Level:</Text>
+                                    <Slider
+                                        w={80}
+                                        min={0}
+                                        max={100}
+                                        step={1}
+                                        label={null}
+                                        onChange={(value) => {
+                                            const expGain = Math.pow(value / 100, 2) * 10;
+                                            onGainChange(expGain);
+                                        }}
+                                        value={Math.sqrt(gain / 10) * 100}
                                         disabled={loading}
+                                        size="xs"
                                     />
-                                </label>
-                            </div>
-                        </FormGroup>
-                    )}
-                </>
-            )}
-        </Card>
+                                    <NumberInput
+                                        value={gain}
+                                        onChange={(val) => onGainChange(typeof val === 'number' ? val : parseFloat(val as string))}
+                                        min={0}
+                                        max={10}
+                                        step={0.1}
+                                        decimalScale={2}
+                                        disabled={loading}
+                                        w={50}
+                                        size="xs"
+                                        hideControls
+                                    />
+                                </Group>
+                                <Group gap="xs">
+                                    <Switch
+                                        label="AGC"
+                                        checked={agcEnabled}
+                                        onChange={(e) => onAgcEnabledChange(e.currentTarget.checked)}
+                                        disabled={loading}
+                                        size="xs"
+                                    />
+                                    {agcEnabled && (
+                                        <NumberInput
+                                            placeholder="Window"
+                                            value={agcWindow}
+                                            onChange={(val) => onAgcWindowChange(typeof val === 'number' ? val : parseFloat(val as string))}
+                                            min={10}
+                                            max={2000}
+                                            step={10}
+                                            disabled={loading}
+                                            w={60}
+                                            size="xs"
+                                            hideControls
+                                        />
+                                    )}
+                                </Group>
+                            </Stack>
+                        </Fieldset>
+                    </Group>
+                </Tabs.Panel>
+            </Tabs>
+        </Paper>
     );
 };

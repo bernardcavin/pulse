@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 
-const SAMPLES_PER_TRACE = 100;
-const NUM_TRACES = 50;
+const SAMPLES_PER_TRACE = 1000;
+const NUM_TRACES = 10000;
 const SAMPLE_INTERVAL = 4000; // microseconds
 const SAMPLE_FORMAT = 5; // IEEE Float
 

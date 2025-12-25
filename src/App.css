@@ -1,35 +1,30 @@
-
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: #293742; /* Blueprint Dark Gray 1 */
+  background-color: #ffffff;
 }
 
 .app-container {
-  display: flex;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-}
-
-.sidebar {
-  width: 300px;
-  padding: 10px;
-  background-color: #30404d; /* Blueprint Dark Gray 2 */
-  flex-shrink: 0;
-  z-index: 10;
-  box-shadow: 2px 0 5px rgba(0,0,0,0.3);
+  display: flex;
+  flex-direction: column;
 }
 
 .main-content {
-  flex-grow: 1;
+  flex: 1;
   position: relative;
-  background-color: #000;
+  background-color: #f0f0f0;
+  /* Light background for contrast */
   overflow: hidden;
   display: flex;
   justify-content: center;
   align-items: center;
+  z-index: 0;
 }
 
 .loading-container {
