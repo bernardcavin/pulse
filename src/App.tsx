@@ -193,6 +193,7 @@ function App() {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
         <TraceDetailsPanel
           selectedTrace={selectedTrace}
+          segyData={segyData}
           isOpen={isDetailsOpen}
           onClose={() => setIsDetailsOpen(false)}
         />
