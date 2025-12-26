@@ -1,15 +1,18 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { TraceDetailsPanel } from './components/TraceDetailsPanel';
-import { FileDetailsPanel } from './components/FileDetailsPanel';
 import { SeismicViewer } from './components/SeismicViewer';
 import { ViewerToolbar, type ToolMode } from './components/ViewerToolbar';
 import type { SegyData, SegyBinaryHeader, SegyTraceHeader } from './utils/SegyParser';
-import { Loader, Button, Stack, Text, Title, Center } from '@mantine/core';
-import { IconDatabaseImport } from '@tabler/icons-react';
+import { getAllHeaderKeys } from './utils/TraceHeaderDescriptions';
+import { SegyWriter } from './utils/SegyWriter';
+import { exportAsPNG, exportAsJPEG, exportAsPDF, exportAsASCII, getViewerCanvases } from './utils/ExportUtils';
+import { Loader, Button, Stack, Text, Title, Center, ActionIcon, Tooltip } from '@mantine/core';
+import { IconDatabaseImport, IconFileInfo } from '@tabler/icons-react';
 import 'normalize.css';
 import './App.css';
+import { FileDetailsPanel } from './components/FileDetailsPanel';
 
 function App() {
   const [segyData, setSegyData] = useState<SegyData | null>(null);
@@ -24,6 +27,7 @@ function App() {
   const [reverse, setReverse] = useState<boolean>(false);
   const [colorMap, setColorMap] = useState<'grey' | 'rwb' | 'custom'>('grey');
   const [customColors, setCustomColors] = useState({ min: '#ff0000', zero: '#ffffff', max: '#0000ff' });
+  const [wiggleFillColors, setWiggleFillColors] = useState({ positive: '#0000ff', negative: '#ff0000' });
   const [offsetX, setOffsetX] = useState<number>(0);
   const [offsetY, setOffsetY] = useState<number>(0);
   const [xAxisHeader, setXAxisHeader] = useState<'trace' | 'cdp' | 'inline' | 'crossline'>('trace');
@@ -33,12 +37,39 @@ function App() {
   const [agcEnabled, setAgcEnabled] = useState<boolean>(true);
   const [agcWindow, setAgcWindow] = useState<number>(500);
   const [showGridlines, setShowGridlines] = useState<boolean>(false);
+  const [allAvailableHeaders, setAllAvailableHeaders] = useState<string[]>([]);
+  const [selectedXAxisHeaders, setSelectedXAxisHeaders] = useState<string[]>(['traceSequenceLine']);
 
   const [selectedTrace, setSelectedTrace] = useState<{ index: number; header: SegyTraceHeader } | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState<boolean>(false);
-  const [isFileDetailsOpen, setIsFileDetailsOpen] = useState<boolean>(false);
-  const [activeTool, setActiveTool] = useState<ToolMode>(null);
+  const [isFileDetailsOpen, setIsFileDetailsOpen] = useState<boolean>(true);
+  const [activeTool, setActiveTool] = useState<ToolMode>('move');
   const [zoom, setZoom] = useState<number>(1.0);
+  const [fileMetadata, setFileMetadata] = useState<{ name: string; size: number; lastModified: number } | null>(null);
+  const viewerContainerRef = useRef<HTMLDivElement>(null);
+
+  // Editable data states
+  const [editedSegyData, setEditedSegyData] = useState<SegyData | null>(null);
+  const [editedBinaryHeader, setEditedBinaryHeader] = useState<SegyBinaryHeader | null>(null);
+  const [editedTextHeader, setEditedTextHeader] = useState<string | null>(null);
+
+  // Sync edited data with original data when loaded
+  useEffect(() => {
+    setEditedSegyData(segyData);
+  }, [segyData]);
+
+  useEffect(() => {
+    setEditedBinaryHeader(header);
+  }, [header]);
+
+  useEffect(() => {
+    setEditedTextHeader(textHeader);
+  }, [textHeader]);
+
+  // Initialize all available headers on mount
+  useEffect(() => {
+    setAllAvailableHeaders(getAllHeaderKeys());
+  }, []);
 
   const parseWithWorker = async (buffer: ArrayBuffer) => {
     setLoading(true);
@@ -84,6 +115,11 @@ function App() {
 
   const handleFileUpload = async (file: File) => {
     try {
+      setFileMetadata({
+        name: file.name,
+        size: file.size,
+        lastModified: file.lastModified
+      });
       const buffer = await file.arrayBuffer();
       await parseWithWorker(buffer);
     } catch (error) {
@@ -112,6 +148,97 @@ function App() {
 
     return () => observer.disconnect();
   }, [segyData, isDetailsOpen, isFileDetailsOpen]);
+
+  // Update handlers for editable data
+  const handleTraceHeaderUpdate = (traceIndex: number, updatedHeader: SegyTraceHeader) => {
+    if (!editedSegyData) return;
+
+    const newHeaders = [...editedSegyData.headers];
+    newHeaders[traceIndex] = updatedHeader;
+
+    setEditedSegyData({
+      ...editedSegyData,
+      headers: newHeaders
+    });
+  };
+
+  const handleTraceDataUpdate = (traceIndex: number, updatedData: Float32Array) => {
+    if (!editedSegyData) return;
+
+    const newData = new Float32Array(editedSegyData.data);
+    const startIndex = traceIndex * editedSegyData.samplesPerTrace;
+    newData.set(updatedData, startIndex);
+
+    setEditedSegyData({
+      ...editedSegyData,
+      data: newData
+    });
+  };
+
+  const handleBinaryHeaderUpdate = (updatedHeader: SegyBinaryHeader) => {
+    setEditedBinaryHeader(updatedHeader);
+  };
+
+  const handleTextHeaderUpdate = (updatedText: string) => {
+    setEditedTextHeader(updatedText);
+  };
+
+  // Export handlers
+  const handleExport = () => {
+    if (!editedSegyData || !editedBinaryHeader || !editedTextHeader) {
+      alert('No data to export');
+      return;
+    }
+
+    const filename = `seismic_${Date.now()}.sgy`;
+    SegyWriter.downloadSegy(filename, editedTextHeader, editedBinaryHeader, editedSegyData);
+  };
+
+  const handleExportPNG = () => {
+    const canvases = getViewerCanvases(viewerContainerRef.current);
+    if (canvases.length === 0) {
+      alert('No visualization to export');
+      return;
+    }
+    const filename = `seismic_${Date.now()}.png`;
+    exportAsPNG(canvases, filename);
+  };
+
+  const handleExportJPEG = () => {
+    const canvases = getViewerCanvases(viewerContainerRef.current);
+    if (canvases.length === 0) {
+      alert('No visualization to export');
+      return;
+    }
+    const filename = `seismic_${Date.now()}.jpg`;
+    exportAsJPEG(canvases, filename);
+  };
+
+  const handleExportPDF = () => {
+    const canvases = getViewerCanvases(viewerContainerRef.current);
+    if (canvases.length === 0) {
+      alert('No visualization to export');
+      return;
+    }
+    const filename = `seismic_${Date.now()}.pdf`;
+    exportAsPDF(canvases, filename, {
+      title: fileMetadata?.name || 'Seismic Visualization',
+      includeMetadata: true,
+      metadata: { binaryHeader: header, fileMetadata }
+    });
+  };
+
+  const handleExportASCII = () => {
+    if (!editedSegyData || !editedBinaryHeader) {
+      alert('No data to export');
+      return;
+    }
+    const filename = `seismic_${Date.now()}.csv`;
+    exportAsASCII(editedSegyData, editedBinaryHeader, filename, {
+      includeHeaders: true,
+      format: 'csv'
+    });
+  };
 
   const handleToolChange = (tool: ToolMode) => {
     if (tool === 'zoom-fit') {
@@ -162,7 +289,11 @@ function App() {
         segyData={segyData}
         binaryHeader={header}
         textHeader={textHeader}
-        onShowFileDetails={() => setIsFileDetailsOpen(true)}
+        onExport={handleExport}
+        onExportPNG={handleExportPNG}
+        onExportJPEG={handleExportJPEG}
+        onExportPDF={handleExportPDF}
+        onExportASCII={handleExportASCII}
         displayWiggle={displayWiggle}
         onDisplayWiggleChange={setDisplayWiggle}
         displayDensity={displayDensity}
@@ -178,37 +309,59 @@ function App() {
         colorMap={colorMap}
         onColorMapChange={setColorMap}
         customColors={customColors}
-        xAxisHeader={xAxisHeader}
-        onXAxisHeaderChange={setXAxisHeader}
         onCustomColorsChange={setCustomColors}
-        availableHeaders={availableHeaders}
         agcEnabled={agcEnabled}
         onAgcEnabledChange={setAgcEnabled}
         agcWindow={agcWindow}
         onAgcWindowChange={setAgcWindow}
         showGridlines={showGridlines}
         onShowGridlinesChange={setShowGridlines}
+        allAvailableHeaders={allAvailableHeaders}
+        selectedXAxisHeaders={selectedXAxisHeaders}
+        onSelectedXAxisHeadersChange={setSelectedXAxisHeaders}
+        wiggleFillColors={wiggleFillColors}
+        onWiggleFillColorsChange={setWiggleFillColors}
+        fileMetadata={fileMetadata}
       />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
         <TraceDetailsPanel
           selectedTrace={selectedTrace}
-          segyData={segyData}
+          segyData={editedSegyData}
           isOpen={isDetailsOpen}
           onClose={() => setIsDetailsOpen(false)}
+          onTraceHeaderUpdate={handleTraceHeaderUpdate}
+          onTraceDataUpdate={handleTraceDataUpdate}
         />
 
-        <div className="main-content" id="viewer-container" style={{ flex: 1, position: 'relative' }}>
-          {header && (
-            <div style={{ position: 'absolute', top: 10, left: 10, color: 'white', zIndex: 100, background: 'rgba(0,0,0,0.5)', padding: 5 }}>
-              Samples/Trace: {header.samplesPerTrace} | Interval: {header.sampleInterval}us
-            </div>
-          )}
+        <div className="main-content" id="viewer-container" ref={viewerContainerRef} style={{ flex: 1, position: 'relative' }}>
           {segyData && segyData.numTraces > 0 && (
-            <ViewerToolbar
-              activeTool={activeTool}
-              onToolChange={handleToolChange}
-            />
+            <>
+              <ViewerToolbar
+                activeTool={activeTool}
+                onToolChange={handleToolChange}
+              />
+              {!isFileDetailsOpen &&
+                <Tooltip label="File Details" position="left" withArrow>
+                  <ActionIcon
+                    size="lg"
+                    variant="filled"
+                    color="blue"
+                    onClick={() => setIsFileDetailsOpen(true)}
+                    radius="xl"
+                    style={{
+                      position: 'absolute',
+                      top: 10,
+                      right: 10,
+                      zIndex: 1000,
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)'
+                    }}
+                  >
+                    <IconFileInfo size={18} />
+                  </ActionIcon>
+                </Tooltip>
+              }
+            </>
           )}
           {loading ? (
             <Center style={{ height: '100%' }}>
@@ -248,6 +401,8 @@ function App() {
               toolMode={activeTool}
               zoom={zoom}
               onZoomChange={setZoom}
+              selectedXAxisHeaders={selectedXAxisHeaders}
+              wiggleFillColors={wiggleFillColors}
             />
           ) : (
             <Center style={{ height: '100%' }}>
@@ -278,11 +433,13 @@ function App() {
         </div>
 
         <FileDetailsPanel
-          segyData={segyData}
-          binaryHeader={header}
-          textHeader={textHeader}
+          segyData={editedSegyData}
+          binaryHeader={editedBinaryHeader}
+          textHeader={editedTextHeader}
           isOpen={isFileDetailsOpen}
           onClose={() => setIsFileDetailsOpen(false)}
+          onBinaryHeaderUpdate={handleBinaryHeaderUpdate}
+          onTextHeaderUpdate={handleTextHeaderUpdate}
         />
       </div>
     </div>

@@ -329,3 +329,10 @@ export function getHeaderDescription(fieldName: string): string {
 export function getHeaderBytes(fieldName: string): string {
     return TRACE_HEADER_DESCRIPTIONS[fieldName]?.bytes || '';
 }
+
+/**
+ * Get all available trace header field names
+ */
+export function getAllHeaderKeys(): string[] {
+    return Object.keys(TRACE_HEADER_DESCRIPTIONS);
+}

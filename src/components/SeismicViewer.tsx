@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SegyData, SegyBinaryHeader } from '../utils/SegyParser';
 import { applyAGC } from '../utils/SignalProcessing';
 import type { ToolMode } from './ViewerToolbar';
+import { getHeaderDescription } from '../utils/TraceHeaderDescriptions';
 
 interface SeismicViewerProps {
     data: SegyData;
@@ -29,6 +30,8 @@ interface SeismicViewerProps {
     toolMode: ToolMode;
     zoom: number;
     onZoomChange?: (zoom: number) => void;
+    selectedXAxisHeaders: string[];
+    wiggleFillColors: { positive: string; negative: string };
 }
 
 
@@ -67,7 +70,9 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
     showGridlines,
     toolMode,
     zoom,
-    onZoomChange
+    onZoomChange,
+    selectedXAxisHeaders,
+    wiggleFillColors
 }) => {
 
     const densityCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -807,10 +812,10 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
                     ctx.clip();
 
                     if (wiggleFill === 'pos') {
-                        ctx.fillStyle = displayDensity ? '#000' : 'blue';
+                        ctx.fillStyle = wiggleFillColors.positive;
                         ctx.fillRect(xCenter, 0, numTraces * traceWidth, samplesPerTrace * sampleHeight);
                     } else {
-                        ctx.fillStyle = 'red';
+                        ctx.fillStyle = wiggleFillColors.negative;
                         ctx.fillRect(-width, 0, xCenter + width, samplesPerTrace * sampleHeight);
                     }
                     ctx.restore();
@@ -873,7 +878,7 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
 
         rafId = requestAnimationFrame(render);
         return () => cancelAnimationFrame(rafId);
-    }, [data, width, height, gain, displayWiggle, wiggleFill, scaleX, scaleY, reverse, offsetX, offsetY, displayDensity, zoom, agcEnabled, agcWindow, header]);
+    }, [data, width, height, gain, displayWiggle, wiggleFill, scaleX, scaleY, reverse, offsetX, offsetY, displayDensity, zoom, agcEnabled, agcWindow, header, wiggleFillColors]);
 
     // Render axes separately
     useEffect(() => {
@@ -901,50 +906,65 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
         ctx.font = '10px sans-serif';
         ctx.lineWidth = 1;
 
+        // X-AXIS AT TOP - Multiple Headers
+        const numHeaders = selectedXAxisHeaders.length;
+        const headerRowHeight = 40; // Height for each header row (increased spacing)
         const xTickInterval = Math.max(1, Math.floor(numTraces / 10));
-        let xLabel = 'Trace Number';
-        for (let t = 0; t < numTraces; t += xTickInterval) {
-            const x = (t + 0.5) * traceWidth;
-            const traceIndex = reverse ? numTraces - 1 - t : t;
-            const traceHeader = data.headers[traceIndex];
 
-            // Get value based on selected header
-            let xValue;
-            switch (xAxisHeader) {
-                case 'cdp':
-                    xValue = traceHeader?.cdp || t + 1;
-                    xLabel = 'CDP';
-                    break;
-                case 'inline':
-                    xValue = traceHeader?.inlineNumber || t + 1;
-                    xLabel = 'Inline';
-                    break;
-                case 'crossline':
-                    xValue = traceHeader?.crosslineNumber || t + 1;
-                    xLabel = 'Crossline';
-                    break;
-                default:
-                    xValue = t + 1;
-                    xLabel = 'Trace Number';
-            }
+        // Render each selected header
+        selectedXAxisHeaders.forEach((headerKey, headerIndex) => {
+            const yOffset = -(numHeaders - headerIndex) * headerRowHeight; // Stack from top
 
+            // Draw horizontal baseline for this header axis
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.moveTo(x, (samplesPerTrace - 1) * sampleHeight);
-            ctx.lineTo(x, (samplesPerTrace - 1) * sampleHeight + 5);
+            ctx.moveTo(0, yOffset);
+            ctx.lineTo(numTraces * traceWidth, yOffset);
             ctx.stroke();
 
+            for (let t = 0; t < numTraces; t += xTickInterval) {
+                const x = (t + 0.5) * traceWidth;
+                const traceIndex = reverse ? numTraces - 1 - t : t;
+                const traceHeader = data.headers[traceIndex];
+
+                // Get value dynamically from trace header
+                let xValue: any = t + 1; // Default to trace number
+                if (traceHeader && headerKey in traceHeader) {
+                    xValue = (traceHeader as any)[headerKey];
+                    // Handle undefined or zero values
+                    if (xValue === undefined || xValue === null) {
+                        xValue = 0;
+                    }
+                }
+
+                // Draw tick mark pointing downward
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x, yOffset);
+                ctx.lineTo(x, yOffset + 5);
+                ctx.stroke();
+
+                // Draw value label
+                ctx.save();
+                ctx.fillStyle = '#000';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${xValue}`, x, yOffset + 15);
+                ctx.restore();
+            }
+
+            // Draw header description label
+            const headerLabel = getHeaderDescription(headerKey);
             ctx.save();
+            ctx.fillStyle = '#000';
             ctx.textAlign = 'center';
-            ctx.fillText(`${xValue}`, x, (samplesPerTrace - 1) * sampleHeight + 15);
+            ctx.font = '11px sans-serif';
+            ctx.fillText(headerLabel, (numTraces * traceWidth) / 2, yOffset - 5);
             ctx.restore();
-        }
+        });
 
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.font = '12px sans-serif';
-        ctx.fillText(xLabel, (numTraces * traceWidth) / 2, (samplesPerTrace - 1) * sampleHeight + 30);
-        ctx.restore();
-
+        // Y-AXIS (Time axis on the left)
         const yTickInterval = Math.max(1, Math.floor(samplesPerTrace / 10));
         for (let s = 0; s < samplesPerTrace; s += yTickInterval) {
             const y = s * sampleHeight;
@@ -969,6 +989,7 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
         ctx.fillText('Time (ms)', 0, 0);
         ctx.restore();
 
+        // Draw border rectangle
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 1;
         ctx.strokeRect(0, 0, numTraces * traceWidth, samplesPerTrace * sampleHeight);
@@ -999,7 +1020,7 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
 
         ctx.restore();
 
-    }, [data, header, width, height, scaleX, scaleY, offsetX, offsetY, xAxisHeader, reverse, zoom, hoveredTrace, gain, displayWiggle, wiggleFill, agcEnabled, agcWindow, showGridlines]);
+    }, [data, header, width, height, scaleX, scaleY, offsetX, offsetY, xAxisHeader, reverse, zoom, hoveredTrace, gain, displayWiggle, wiggleFill, agcEnabled, agcWindow, showGridlines, selectedXAxisHeaders]);
 
     return (
         <div style={{ position: 'relative', width, height }}>
@@ -1040,7 +1061,9 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
                     top: 0,
                     left: 0,
                     cursor: toolMode === 'zoom-window' ? 'crosshair' :
-                        (isGrabbing ? 'grabbing' : (hoveredTrace !== null && toolMode === 'pick' ? 'pointer' : 'grab')),
+                        toolMode === 'pick' ? (hoveredTrace !== null ? 'pointer' : 'default') :
+                            toolMode === 'move' ? (isGrabbing ? 'grabbing' : 'grab') :
+                                (isGrabbing ? 'grabbing' : 'grab'), // Default to grab behavior
                     pointerEvents: 'all'
                 }}
                 onMouseDown={handleMouseDown}

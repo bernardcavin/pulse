@@ -1,13 +1,17 @@
 import { Stack, ActionIcon, Tooltip } from '@mantine/core';
 import {
+    IconHandMove,
     IconPointer,
     IconZoomScan,
     IconRectangle,
     IconZoomIn,
-    IconZoomOut
+    IconZoomOut,
+    IconHandGrab,
+    IconHandFinger,
+    IconHandStop
 } from '@tabler/icons-react';
 
-export type ToolMode = 'pick' | 'zoom-fit' | 'zoom-window' | 'zoom-in' | 'zoom-out' | null;
+export type ToolMode = 'move' | 'pick' | 'zoom-fit' | 'zoom-window' | 'zoom-in' | 'zoom-out' | null;
 
 interface ViewerToolbarProps {
     activeTool: ToolMode;
@@ -30,14 +34,35 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({ activeTool, onTool
                 zIndex: 1000
             }}
         >
+            <Tooltip label="Move/Pan" position="right" withArrow>
+                <ActionIcon
+                    variant={activeTool === 'move' ? 'filled' : 'default'}
+                    color={activeTool === 'move' ? 'blue' : 'gray'}
+                    size="lg"
+                    onClick={() => {
+                        // Cursor tools cannot be deactivated - always keep one active
+                        if (activeTool !== 'move') {
+                            onToolChange('move');
+                        }
+                    }}
+                >
+                    <IconHandStop size={18} />
+                </ActionIcon>
+            </Tooltip>
+
             <Tooltip label="Pick Trace" position="right" withArrow>
                 <ActionIcon
                     variant={activeTool === 'pick' ? 'filled' : 'default'}
                     color={activeTool === 'pick' ? 'blue' : 'gray'}
                     size="lg"
-                    onClick={() => onToolChange(activeTool === 'pick' ? null : 'pick')}
+                    onClick={() => {
+                        // Cursor tools cannot be deactivated - always keep one active
+                        if (activeTool !== 'pick') {
+                            onToolChange('pick');
+                        }
+                    }}
                 >
-                    <IconPointer size={18} />
+                    <IconHandFinger size={18} />
                 </ActionIcon>
             </Tooltip>
 
@@ -57,7 +82,12 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({ activeTool, onTool
                     variant={activeTool === 'zoom-window' ? 'filled' : 'default'}
                     color={activeTool === 'zoom-window' ? 'blue' : 'gray'}
                     size="lg"
-                    onClick={() => onToolChange(activeTool === 'zoom-window' ? null : 'zoom-window')}
+                    onClick={() => {
+                        // Cursor tools cannot be deactivated - always keep one active
+                        if (activeTool !== 'zoom-window') {
+                            onToolChange('zoom-window');
+                        }
+                    }}
                 >
                     <IconRectangle size={18} />
                 </ActionIcon>
