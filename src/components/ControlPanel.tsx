@@ -1,11 +1,13 @@
-import { FileInput, Slider, Paper, Radio, NumberInput, Group, Stack, Switch, ColorInput, Fieldset, Text, Tabs, Button, ScrollArea, Checkbox, SimpleGrid, TextInput } from '@mantine/core';
+import { FileInput, Slider, Paper, Radio, NumberInput, Group, Stack, Switch, ColorInput, Fieldset, Text, Tabs, Button, ScrollArea, Checkbox, SimpleGrid, TextInput, ActionIcon, Divider, Space, Tooltip } from '@mantine/core';
 import { useState } from 'react';
 import type { SegyData, SegyBinaryHeader } from '../utils/SegyParser';
 import { getHeaderDescription } from '../utils/TraceHeaderDescriptions';
-import { IconEye, IconFile, IconSettings, IconFileTypePng, IconFileTypeJpg, IconFileTypePdf, IconFileTypeCsv } from '@tabler/icons-react';
+import { IconEye, IconFile, IconSettings, IconFileTypePng, IconFileTypeJpg, IconFileTypePdf, IconFileTypeCsv, IconX, IconRefresh, IconChevronUp } from '@tabler/icons-react';
+import classes from './controlpanel.module.css';
 
 interface ControlPanelProps {
     onFileUpload: (file: File) => void;
+    onRemoveFile: () => void;
     gain: number;
     onGainChange: (val: number) => void;
     loading: boolean;
@@ -45,10 +47,12 @@ interface ControlPanelProps {
     onExportJPEG: () => void;
     onExportPDF: () => void;
     onExportASCII: () => void;
+    onClose: () => void;
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
     onFileUpload,
+    onRemoveFile,
     gain,
     onGainChange,
     loading,
@@ -87,13 +91,22 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     onExportPNG,
     onExportJPEG,
     onExportPDF,
-    onExportASCII
+    onExportASCII,
+    onClose
 }) => {
     const [headerSearch, setHeaderSearch] = useState('');
 
     const handleFileChange = (payload: File | null) => {
         if (payload) {
             onFileUpload(payload);
+        }
+    };
+
+    const handleChangeFile = () => {
+        // Trigger the file input click
+        const fileInputElement = document.querySelector<HTMLInputElement>('input[type="file"][accept=".sgy,.segy"]');
+        if (fileInputElement) {
+            fileInputElement.click();
         }
     };
 
@@ -133,26 +146,80 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     };
 
     return (
-        <Paper p={8} withBorder style={{ width: '100%', height: '200px', zIndex: 10, overflow: 'hidden' }} >
-            <Tabs defaultValue="file" variant='outline' radius="sm" >
-                <Tabs.List mb={6}>
-                    <Tabs.Tab leftSection={<IconFile size={16} stroke={1.5} />} value="file" style={{ fontSize: '11px', padding: '4px 10px', height: '24px', outline: 'none' }}>File</Tabs.Tab>
-                    <Tabs.Tab leftSection={<IconEye size={16} stroke={1.5} />} value="display" style={{ fontSize: '11px', padding: '4px 10px', height: '24px', outline: 'none' }}>Display</Tabs.Tab>
-                    <Tabs.Tab leftSection={<IconSettings size={16} stroke={1.5} />} value="processing" style={{ fontSize: '11px', padding: '4px 10px', height: '24px', outline: 'none' }}>Processing</Tabs.Tab>
+        <Paper p={0} radius={0} style={{ width: '100%', borderBottom: '1px solid #ccc', height: '200px', zIndex: 10, overflow: 'hidden', position: 'relative' }} >
+            <ActionIcon
+                size="sm"
+                variant="subtle"
+                color="gray"
+                onClick={onClose}
+                radius="xl"
+                style={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    zIndex: 1001
+                }}
+                title="Hide Control Panel"
+            >
+                <IconChevronUp size={16} color='white' stroke={1.5} />
+            </ActionIcon>
+            <Tabs defaultValue="file" variant='pills' radius="sm" >
+                <Tabs.List mb={6} bg="blue.8" p={5}>
+                    <Tooltip label="Pulse v1.0.1">
+                        <img
+                            src="/logo.png"
+                            alt="Pulse Logo"
+                            style={{
+                                width: '30px',
+                                height: '30px',
+                                objectFit: 'contain',
+                                opacity: 1
+                            }}
+                        />
+                    </Tooltip>
+                    <Tabs.Tab className={classes.tab} c="white" leftSection={<IconFile size={16} stroke={1.5} />} value="file" style={{ fontSize: '11px', padding: '15px 10px', height: '24px', outline: 'none' }}>File</Tabs.Tab>
+                    <Tabs.Tab className={classes.tab} c="white" leftSection={<IconEye size={16} stroke={1.5} />} value="display" style={{ fontSize: '11px', padding: '15px 10px', height: '24px', outline: 'none' }}>Display</Tabs.Tab>
+                    <Tabs.Tab className={classes.tab} c="white" leftSection={<IconSettings size={16} stroke={1.5} />} value="processing" style={{ fontSize: '11px', padding: '15px 10px', height: '24px', outline: 'none' }}>Processing</Tabs.Tab>
                 </Tabs.List>
 
-                <Tabs.Panel value="file" pt={0}>
+                <Tabs.Panel value="file" px={10} pt={0}>
                     <Group align="flex-start" gap="md" wrap="nowrap">
-                        <Fieldset legend="File Management" p="sm" style={{ minWidth: '200px', height: '138px' }}>
+                        <Fieldset legend="File Management" p="sm" style={{ minWidth: '240px', height: '138px' }}>
                             <Stack gap="xs">
                                 <Text size="10px" c="dimmed" mb={2}>Load and manage SEG-Y files</Text>
                                 <FileInput
+                                    key={segyData ? 'loaded' : 'empty'}
                                     placeholder="Load SEG-Y file"
                                     onChange={handleFileChange}
                                     accept=".sgy,.segy"
                                     disabled={loading}
                                     size="xs"
                                 />
+                                {segyData && (
+                                    <Group gap="xs" mt={4}>
+                                        <Button
+                                            // variant="light"
+                                            color="red"
+                                            size="xs"
+                                            onClick={onRemoveFile}
+                                            disabled={loading}
+                                            leftSection={<IconX size={14} />}
+                                            flex={1}
+                                        >
+                                            Remove
+                                        </Button>
+                                        <Button
+                                            // variant="light"
+                                            size="xs"
+                                            onClick={handleChangeFile}
+                                            disabled={loading}
+                                            leftSection={<IconRefresh size={14} />}
+                                            flex={1}
+                                        >
+                                            Change
+                                        </Button>
+                                    </Group>
+                                )}
                             </Stack>
                         </Fieldset>
 
@@ -208,7 +275,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         {segyData && binaryHeader && (
                             <Fieldset legend="Export" p="sm" style={{ minWidth: '320px', height: '138px' }}>
                                 <Stack gap={4}>
-                                    <Text size="10px" c="dimmed" mb={2}>Export data and visualization</Text>
+
                                     <SimpleGrid cols={3} spacing="xs" >
                                         <Button
                                             variant="subtle"
@@ -217,7 +284,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                             color="black"
                                             leftSection={<IconFile size={12} />}
                                         >
-                                            <Text size="xs" fw={500} mt={2}>
+                                            <Text size="xs" mt={2}>
                                                 Export as SEG-Y
                                             </Text>
                                         </Button>
@@ -228,7 +295,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                             color="black"
                                             leftSection={<IconFileTypePng size={14} />}
                                         >
-                                            <Text size="xs" fw={500} mt={2}>
+                                            <Text size="xs" mt={2}>
                                                 Export as PNG
                                             </Text>
                                         </Button>
@@ -239,7 +306,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                             color="black"
                                             leftSection={<IconFileTypeJpg size={12} />}
                                         >
-                                            <Text size="xs" fw={500} mt={2}>
+                                            <Text size="xs" mt={2}>
                                                 Export as JPEG
                                             </Text>
                                         </Button>
@@ -250,7 +317,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                             color="black"
                                             leftSection={<IconFileTypePdf size={12} />}
                                         >
-                                            <Text size="xs" fw={500} mt={2}>
+                                            <Text size="xs" mt={2}>
                                                 Export as PDF
                                             </Text>
                                         </Button>
@@ -261,7 +328,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                             color="black"
                                             leftSection={<IconFileTypeCsv size={12} />}
                                         >
-                                            <Text size="xs" fw={500} mt={2}>
+                                            <Text size="xs" mt={2}>
                                                 Export as CSV
                                             </Text>
                                         </Button>
@@ -273,28 +340,30 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     </Group>
                 </Tabs.Panel>
 
-                <Tabs.Panel value="display" pt={0}>
-                    <Group align="flex-start" gap="md" wrap="nowrap">
+                <Tabs.Panel value="display" px={10} pt={0}>
+                    <Group align="flex-start" gap="md" wrap="nowrap" >
                         <Fieldset legend="Display Mode" p="sm" style={{ minWidth: '160px', height: '138px' }}>
                             <Stack gap="xs">
                                 <Text size="10px" c="dimmed" mb={2}>Choose visualization type</Text>
                                 <Switch
                                     label="Wiggle Traces"
-                                    description="Show seismic traces as wiggles"
+                                    description="Traces as wiggles"
                                     checked={displayWiggle}
                                     onChange={(e) => onDisplayWiggleChange(e.currentTarget.checked)}
                                     disabled={loading}
                                     size="xs"
                                     styles={{ description: { fontSize: '9px' } }}
+
                                 />
                                 <Switch
                                     label="Density Plot"
-                                    description="Show amplitude as color density"
+                                    description="Amplitude as color density"
                                     checked={displayDensity}
                                     onChange={(e) => onDisplayDensityChange(e.currentTarget.checked)}
                                     disabled={loading}
                                     size="xs"
                                     styles={{ description: { fontSize: '9px' } }}
+                                    w={200}
                                 />
                             </Stack>
                         </Fieldset>
@@ -334,7 +403,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                 </Group>
                                 <Switch
                                     label="Show Gridlines"
-                                    description="Display reference grid"
+                                    // description="Display reference grid"
                                     checked={showGridlines}
                                     onChange={(e) => onShowGridlinesChange(e.currentTarget.checked)}
                                     disabled={loading}
@@ -402,7 +471,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                     </Radio.Group>
                                     <Switch
                                         label="Reverse Colormap"
-                                        description="Invert color scale"
+                                        // description="Invert color scale"
                                         checked={reverse}
                                         onChange={(e) => onReverseChange(e.currentTarget.checked)}
                                         disabled={loading}
@@ -487,7 +556,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     </Group>
                 </Tabs.Panel>
 
-                <Tabs.Panel value="processing" pt={0} >
+                <Tabs.Panel value="processing" px={10} pt={0} >
                     <Group align="flex-start" gap="md">
                         <Fieldset legend="Amplitude Gain" p="sm" style={{ minWidth: '280px', height: '138px' }}>
                             <Stack gap="xs">
@@ -521,32 +590,35 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                         hideControls
                                     />
                                 </Group>
-                                <Switch
-                                    label="AGC (Automatic Gain Control)"
-                                    description="Apply time-variant scaling"
-                                    checked={agcEnabled}
-                                    onChange={(e) => onAgcEnabledChange(e.currentTarget.checked)}
-                                    disabled={loading}
-                                    size="xs"
-                                    styles={{ description: { fontSize: '9px' } }}
-                                />
-                                {agcEnabled && (
-                                    <Group gap="xs" align="center">
-                                        <Text size="xs" w={80}>Window (ms):</Text>
-                                        <NumberInput
-                                            value={agcWindow}
-                                            onChange={(val) => onAgcWindowChange(typeof val === 'number' ? val : parseFloat(val as string))}
-                                            min={10}
-                                            max={2000}
-                                            step={10}
-                                            disabled={loading}
-                                            w={80}
-                                            size="xs"
-                                            hideControls
-                                        />
-                                        <Text size="10px" c="dimmed">ms</Text>
-                                    </Group>
-                                )}
+                                <Group>
+                                    <Switch
+                                        label="AGC (Automatic Gain Control)"
+                                        description="Apply time-variant scaling"
+                                        checked={agcEnabled}
+                                        onChange={(e) => onAgcEnabledChange(e.currentTarget.checked)}
+                                        disabled={loading}
+                                        size="xs"
+                                        styles={{ description: { fontSize: '9px' } }}
+                                    />
+                                    <Divider orientation='vertical' />
+                                    {agcEnabled && (
+                                        <Group gap="xs" align="center">
+                                            <Text size="xs" w={80}>Window (ms):</Text>
+                                            <NumberInput
+                                                value={agcWindow}
+                                                onChange={(val) => onAgcWindowChange(typeof val === 'number' ? val : parseFloat(val as string))}
+                                                min={10}
+                                                max={2000}
+                                                step={10}
+                                                disabled={loading}
+                                                w={80}
+                                                size="xs"
+                                                hideControls
+                                            />
+                                            <Text size="10px" c="dimmed">ms</Text>
+                                        </Group>
+                                    )}
+                                </Group>
                             </Stack>
                         </Fieldset>
                     </Group>

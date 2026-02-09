@@ -8,8 +8,8 @@ import type { SegyData, SegyBinaryHeader, SegyTraceHeader } from './utils/SegyPa
 import { getAllHeaderKeys } from './utils/TraceHeaderDescriptions';
 import { SegyWriter } from './utils/SegyWriter';
 import { exportAsPNG, exportAsJPEG, exportAsPDF, exportAsASCII, getViewerCanvases } from './utils/ExportUtils';
-import { Loader, Button, Stack, Text, Title, Center, ActionIcon, Tooltip } from '@mantine/core';
-import { IconDatabaseImport, IconFileInfo } from '@tabler/icons-react';
+import { Loader, Button, Stack, Text, Title, Center, ActionIcon, Tooltip, Group } from '@mantine/core';
+import { IconFileInfo, IconUpload, IconWaveSine, IconSettings } from '@tabler/icons-react';
 import 'normalize.css';
 import './App.css';
 import { FileDetailsPanel } from './components/FileDetailsPanel';
@@ -43,6 +43,7 @@ function App() {
   const [selectedTrace, setSelectedTrace] = useState<{ index: number; header: SegyTraceHeader } | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState<boolean>(false);
   const [isFileDetailsOpen, setIsFileDetailsOpen] = useState<boolean>(true);
+  const [isControlPanelOpen, setIsControlPanelOpen] = useState<boolean>(true);
   const [activeTool, setActiveTool] = useState<ToolMode>('move');
   const [zoom, setZoom] = useState<number>(1.0);
   const [fileMetadata, setFileMetadata] = useState<{ name: string; size: number; lastModified: number } | null>(null);
@@ -127,7 +128,21 @@ function App() {
     }
   };
 
-
+  const handleRemoveFile = () => {
+    // Clear all data and reset state
+    setSegyData(null);
+    setHeader(null);
+    setTextHeader(null);
+    setFileMetadata(null);
+    setEditedSegyData(null);
+    setEditedBinaryHeader(null);
+    setEditedTextHeader(null);
+    setSelectedTrace(null);
+    setIsDetailsOpen(false);
+    setZoom(1.0);
+    setOffsetX(0);
+    setOffsetY(0);
+  };
   // Responsive canvas
   useEffect(() => {
     const viewerContainer = document.getElementById('viewer-container');
@@ -147,7 +162,7 @@ function App() {
     updateDimensions();
 
     return () => observer.disconnect();
-  }, [segyData, isDetailsOpen, isFileDetailsOpen]);
+  }, [segyData, isDetailsOpen, isFileDetailsOpen, isControlPanelOpen]);
 
   // Update handlers for editable data
   const handleTraceHeaderUpdate = (traceIndex: number, updatedHeader: SegyTraceHeader) => {
@@ -281,48 +296,89 @@ function App() {
   return (
     <div className="app-container" style={{ display: 'flex', flexDirection: 'column' }}>
 
-      <ControlPanel
-        onFileUpload={handleFileUpload}
-        gain={gain}
-        onGainChange={setGain}
-        loading={loading}
-        segyData={segyData}
-        binaryHeader={header}
-        textHeader={textHeader}
-        onExport={handleExport}
-        onExportPNG={handleExportPNG}
-        onExportJPEG={handleExportJPEG}
-        onExportPDF={handleExportPDF}
-        onExportASCII={handleExportASCII}
-        displayWiggle={displayWiggle}
-        onDisplayWiggleChange={setDisplayWiggle}
-        displayDensity={displayDensity}
-        onDisplayDensityChange={setDisplayDensity}
-        wiggleFill={wiggleFill}
-        onWiggleFillChange={setWiggleFill}
-        scaleX={scaleX}
-        onScaleXChange={setScaleX}
-        scaleY={scaleY}
-        onScaleYChange={setScaleY}
-        reverse={reverse}
-        onReverseChange={setReverse}
-        colorMap={colorMap}
-        onColorMapChange={setColorMap}
-        customColors={customColors}
-        onCustomColorsChange={setCustomColors}
-        agcEnabled={agcEnabled}
-        onAgcEnabledChange={setAgcEnabled}
-        agcWindow={agcWindow}
-        onAgcWindowChange={setAgcWindow}
-        showGridlines={showGridlines}
-        onShowGridlinesChange={setShowGridlines}
-        allAvailableHeaders={allAvailableHeaders}
-        selectedXAxisHeaders={selectedXAxisHeaders}
-        onSelectedXAxisHeadersChange={setSelectedXAxisHeaders}
-        wiggleFillColors={wiggleFillColors}
-        onWiggleFillColorsChange={setWiggleFillColors}
-        fileMetadata={fileMetadata}
+      {/* Hidden file input - always available for welcome screen */}
+      <input
+        type="file"
+        accept=".sgy,.segy"
+        style={{ display: 'none' }}
+        id="hidden-file-input"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            handleFileUpload(file);
+          }
+        }}
       />
+
+      {segyData && isControlPanelOpen && (
+        <ControlPanel
+          onFileUpload={handleFileUpload}
+          onRemoveFile={handleRemoveFile}
+          gain={gain}
+          onGainChange={setGain}
+          loading={loading}
+          segyData={segyData}
+          binaryHeader={header}
+          textHeader={textHeader}
+          onExport={handleExport}
+          onExportPNG={handleExportPNG}
+          onExportJPEG={handleExportJPEG}
+          onExportPDF={handleExportPDF}
+          onExportASCII={handleExportASCII}
+          displayWiggle={displayWiggle}
+          onDisplayWiggleChange={setDisplayWiggle}
+          displayDensity={displayDensity}
+          onDisplayDensityChange={setDisplayDensity}
+          wiggleFill={wiggleFill}
+          onWiggleFillChange={setWiggleFill}
+          scaleX={scaleX}
+          onScaleXChange={setScaleX}
+          scaleY={scaleY}
+          onScaleYChange={setScaleY}
+          reverse={reverse}
+          onReverseChange={setReverse}
+          colorMap={colorMap}
+          onColorMapChange={setColorMap}
+          customColors={customColors}
+          onCustomColorsChange={setCustomColors}
+          agcEnabled={agcEnabled}
+          onAgcEnabledChange={setAgcEnabled}
+          agcWindow={agcWindow}
+          onAgcWindowChange={setAgcWindow}
+          showGridlines={showGridlines}
+          onShowGridlinesChange={setShowGridlines}
+          allAvailableHeaders={allAvailableHeaders}
+          selectedXAxisHeaders={selectedXAxisHeaders}
+          onSelectedXAxisHeadersChange={setSelectedXAxisHeaders}
+          wiggleFillColors={wiggleFillColors}
+          onWiggleFillColorsChange={setWiggleFillColors}
+          fileMetadata={fileMetadata}
+          onClose={() => setIsControlPanelOpen(false)}
+        />
+      )}
+
+      {/* Toggle button when control panel is hidden */}
+      {segyData && !isControlPanelOpen && (
+        <Tooltip label="Show Control Panel" position="bottom" withArrow>
+          <ActionIcon
+            size="lg"
+            variant="filled"
+            color="blue"
+            onClick={() => setIsControlPanelOpen(true)}
+            radius="xl"
+            style={{
+              position: 'absolute',
+              top: 10,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 1000,
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)'
+            }}
+          >
+            <IconSettings size={18} />
+          </ActionIcon>
+        </Tooltip>
+      )}
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
         <TraceDetailsPanel
@@ -405,28 +461,68 @@ function App() {
               wiggleFillColors={wiggleFillColors}
             />
           ) : (
-            <Center style={{ height: '100%' }}>
-              <Stack align="center" gap="md">
-                <IconDatabaseImport size={48} stroke={1.5} color="gray" />
-                <Title order={3}>No Data Loaded</Title>
-                <Text c="dimmed">Upload a SEG-Y file to visualize seismic data.</Text>
-                <Button
-                  variant="filled"
-                  onClick={async () => {
-                    setLoading(true);
-                    try {
-                      const response = await fetch('/mock.sgy');
-                      const buffer = await response.arrayBuffer();
-                      await parseWithWorker(buffer);
-                    } catch (e) {
-                      console.error(e);
-                      alert('Failed to load mock data');
-                      setLoading(false);
-                    }
+            <Center style={{ height: '100%', backgroundColor: '#f8f9fa' }}>
+              <Stack align="center" p="xl" gap={0} style={{ maxWidth: '600px' }}>
+                <img
+                  src="/logo.png"
+                  alt="Pulse Logo"
+                  style={{
+                    width: '120px',
+                    height: '120px',
+                    objectFit: 'contain',
+                    opacity: 0.9
                   }}
-                >
-                  Load Large Mock Data
-                </Button>
+                />
+                <Stack align="center" gap="sm">
+                  <Group>
+                    <Text fz="2.5rem" fw={700}> Welcome to</Text> <Text fz="2.5rem" fw={700} variant="gradient"
+                      gradient={{ from: 'blue', to: 'cyan', deg: 90 }}>Pulse</Text>
+                  </Group>
+                  <Text c="dimmed" ta="center" size="md" style={{ lineHeight: 1.6 }}>
+                    A modern web-based SEG-Y viewer for seismic data visualization and analysis.
+                    Pulse provides powerful tools to explore, edit, and export seismic datasets
+                    with an intuitive interface designed for geophysicists and data analysts.
+                  </Text>
+                  <Text c="dimmed" ta="center" size="xs" mt="xs" fw={500}>
+                    Supported formats: .sgy, .segy
+                  </Text>
+                </Stack>
+                <Group gap="md" mt="md">
+                  <Button
+                    variant="filled"
+                    size="md"
+                    radius="xl"
+                    leftSection={<IconUpload size={16} />}
+                    onClick={() => {
+                      const fileInput = document.getElementById('hidden-file-input') as HTMLInputElement;
+                      if (fileInput) {
+                        fileInput.click();
+                      }
+                    }}
+                  >
+                    Upload SEG-Y File
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="md"
+                    radius="xl"
+                    leftSection={<IconWaveSine size={16} />}
+                    onClick={async () => {
+                      setLoading(true);
+                      try {
+                        const response = await fetch('/mock.sgy');
+                        const buffer = await response.arrayBuffer();
+                        await parseWithWorker(buffer);
+                      } catch (e) {
+                        console.error(e);
+                        alert('Failed to load mock data');
+                        setLoading(false);
+                      }
+                    }}
+                  >
+                    Try Sample Data
+                  </Button>
+                </Group>
               </Stack>
             </Center>
           )}

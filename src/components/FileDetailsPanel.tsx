@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Paper, Title, Table, CloseButton, Group, Text, Box, Tabs, Textarea, NumberInput } from '@mantine/core';
+import { Paper, Title, Table, CloseButton, Group, Text, Box, Tabs, Textarea, NumberInput, ScrollArea } from '@mantine/core';
 import type { SegyData, SegyBinaryHeader } from '../utils/SegyParser';
 import { BINARY_HEADER_DESCRIPTIONS } from '../utils/BinaryHeaderDescriptions';
+import { IconGrid4x4, IconTextCaption } from '@tabler/icons-react';
 
 interface FileDetailsPanelProps {
     segyData: SegyData | null;
@@ -72,103 +73,64 @@ export const FileDetailsPanel: React.FC<FileDetailsPanelProps> = ({
                         <CloseButton onClick={onClose} />
                     </Group>
 
-                    <Tabs defaultValue="summary" variant="pills" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: '350px', overflow: 'hidden' }}>
+                    <Tabs defaultValue="text-header" variant="outline" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: '350px', overflow: 'hidden' }}>
                         <Tabs.List mb="xs">
-                            <Tabs.Tab value="summary">Summary</Tabs.Tab>
-                            <Tabs.Tab value="text-header">Text Header</Tabs.Tab>
-                            <Tabs.Tab value="bin-header">Bin Header</Tabs.Tab>
+                            <Tabs.Tab leftSection={<IconTextCaption size={12} stroke={1.5} />} style={{ fontSize: '11px', padding: '15px 10px', height: '24px', outline: 'none' }} value="text-header">Text Header</Tabs.Tab>
+                            <Tabs.Tab leftSection={<IconGrid4x4 size={12} stroke={1.5} />} style={{ fontSize: '11px', padding: '15px 10px', height: '24px', outline: 'none' }} value="bin-header">Bin Header</Tabs.Tab>
                         </Tabs.List>
 
                         <Box style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                            <Tabs.Panel value="summary" style={{ flex: 1, overflow: 'auto' }}>
-                                <Table striped highlightOnHover withTableBorder withColumnBorders>
-                                    <Table.Tbody>
-                                        <Table.Tr>
-                                            <Table.Td><Text size="sm" fw={600}>Number of Traces</Text></Table.Td>
-                                            <Table.Td style={{ textAlign: 'center' }}>{segyData.numTraces}</Table.Td>
-                                        </Table.Tr>
-                                        <Table.Tr>
-                                            <Table.Td><Text size="sm" fw={600}>Samples per Trace</Text></Table.Td>
-                                            <Table.Td style={{ textAlign: 'center' }}>{binaryHeader.samplesPerTrace}</Table.Td>
-                                        </Table.Tr>
-                                        <Table.Tr>
-                                            <Table.Td><Text size="sm" fw={600}>Sample Interval</Text></Table.Td>
-                                            <Table.Td style={{ textAlign: 'center' }}>{binaryHeader.sampleInterval} μs</Table.Td>
-                                        </Table.Tr>
-                                        <Table.Tr>
-                                            <Table.Td><Text size="sm" fw={600}>Data Format</Text></Table.Td>
-                                            <Table.Td style={{ textAlign: 'center' }}>
-                                                {binaryHeader.sampleFormat === 1 ? 'IBM Float' :
-                                                    binaryHeader.sampleFormat === 5 ? 'IEEE Float' :
-                                                        `Code ${binaryHeader.sampleFormat}`}
-                                            </Table.Td>
-                                        </Table.Tr>
-                                        <Table.Tr>
-                                            <Table.Td><Text size="sm" fw={600}>Measurement System</Text></Table.Td>
-                                            <Table.Td style={{ textAlign: 'center' }}>
-                                                {binaryHeader.measurementSystem === 1 ? 'Meters' :
-                                                    binaryHeader.measurementSystem === 2 ? 'Feet' :
-                                                        'Unknown'}
-                                            </Table.Td>
-                                        </Table.Tr>
-                                        <Table.Tr>
-                                            <Table.Td><Text size="sm" fw={600}>Total Duration</Text></Table.Td>
-                                            <Table.Td style={{ textAlign: 'center' }}>
-                                                {((binaryHeader.samplesPerTrace * binaryHeader.sampleInterval) / 1000).toFixed(2)} ms
-                                            </Table.Td>
-                                        </Table.Tr>
-                                    </Table.Tbody>
-                                </Table>
-                            </Tabs.Panel>
 
                             <Tabs.Panel value="text-header" style={{ flex: 1, overflow: 'auto' }}>
-                                {textHeader ? (
-                                    <Box>
-                                        {editingTextHeader ? (
-                                            <Textarea
-                                                value={textHeader}
-                                                onChange={(e) => {
-                                                    if (onTextHeaderUpdate) {
-                                                        onTextHeaderUpdate(e.currentTarget.value);
-                                                    }
-                                                }}
-                                                onBlur={() => setEditingTextHeader(false)}
-                                                minRows={25}
-                                                maxRows={25}
-                                                styles={{ input: { fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.4' } }}
-                                                autoFocus
-                                            />
-                                        ) : (
-                                            <Box
-                                                onClick={() => onTextHeaderUpdate && setEditingTextHeader(true)}
-                                                style={{
-                                                    cursor: onTextHeaderUpdate ? 'pointer' : 'default',
-                                                    padding: '8px',
-                                                    borderRadius: '4px',
-                                                    transition: 'background-color 0.2s'
-                                                }}
-                                                onMouseEnter={(e) => {
-                                                    if (onTextHeaderUpdate) {
-                                                        e.currentTarget.style.backgroundColor = 'rgba(0, 123, 255, 0.05)';
-                                                    }
-                                                }}
-                                                onMouseLeave={(e) => {
-                                                    e.currentTarget.style.backgroundColor = 'transparent';
-                                                }}
-                                            >
-                                                <Text size="xs" ff="monospace" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>
-                                                    {textHeader}
-                                                </Text>
-                                            </Box>
-                                        )}
-                                    </Box>
-                                ) : (
-                                    <Text c="dimmed" style={{ padding: '8px' }}>No text header available</Text>
-                                )}
+                                <ScrollArea type="auto" w="100%" h="100%">
+                                    {textHeader ? (
+                                        <Box>
+                                            {editingTextHeader ? (
+                                                <Textarea
+                                                    value={textHeader}
+                                                    onChange={(e) => {
+                                                        if (onTextHeaderUpdate) {
+                                                            onTextHeaderUpdate(e.currentTarget.value);
+                                                        }
+                                                    }}
+                                                    onBlur={() => setEditingTextHeader(false)}
+                                                    minRows={25}
+                                                    autosize
+                                                    styles={{ input: { fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.4' } }}
+                                                    autoFocus
+                                                />
+                                            ) : (
+                                                <Box
+                                                    onClick={() => onTextHeaderUpdate && setEditingTextHeader(true)}
+                                                    style={{
+                                                        cursor: onTextHeaderUpdate ? 'pointer' : 'default',
+                                                        padding: '8px',
+                                                        borderRadius: '4px',
+                                                        transition: 'background-color 0.2s'
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        if (onTextHeaderUpdate) {
+                                                            e.currentTarget.style.backgroundColor = 'rgba(0, 123, 255, 0.05)';
+                                                        }
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.backgroundColor = 'transparent';
+                                                    }}
+                                                >
+                                                    <Text size="xs" ff="monospace" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>
+                                                        {textHeader}
+                                                    </Text>
+                                                </Box>
+                                            )}
+                                        </Box>
+                                    ) : (
+                                        <Text c="dimmed" style={{ padding: '8px' }}>No text header available</Text>
+                                    )}
+                                </ScrollArea>
                             </Tabs.Panel>
 
                             <Tabs.Panel value="bin-header" style={{ flex: 1, overflow: 'auto' }}>
-                                <Table striped withTableBorder withColumnBorders>
+                                <Table withTableBorder withColumnBorders>
                                     <Table.Tbody>
                                         {binaryHeader && Object.entries(binaryHeader).map(([key, value]) => {
                                             const headerInfo = BINARY_HEADER_DESCRIPTIONS[key];

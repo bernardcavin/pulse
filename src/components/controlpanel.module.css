@@ -1,0 +1,9 @@
+.tab:hover {
+    background-color: var(--mantine-color-blue-7);
+}
+
+/* To target the active (selected) tab's color on hover */
+.tab[data-active]:hover {
+    background-color: var(--mantine-color-blue-7);
+    /* Mantine theme hover variable */
+}

@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Paper, Title, Table, ScrollArea, CloseButton, Group, Text, Box, Tabs, NumberInput } from '@mantine/core';
-import { List } from 'react-window';
+import { DataTable } from 'mantine-datatable';
+import 'mantine-datatable/styles.css';
 import type { SegyTraceHeader, SegyData } from '../utils/SegyParser';
 import { TRACE_HEADER_DESCRIPTIONS } from '../utils/TraceHeaderDescriptions';
+import { IconTable, IconWaveSine } from '@tabler/icons-react';
 
 interface TraceDetailsPanelProps {
     selectedTrace: { index: number; header: SegyTraceHeader } | null;
@@ -18,14 +20,17 @@ export const TraceDetailsPanel: React.FC<TraceDetailsPanelProps> = ({ selectedTr
     const [editingField, setEditingField] = useState<string | null>(null);
     const [editingDataIndex, setEditingDataIndex] = useState<number | null>(null);
     const [hoveredField, setHoveredField] = useState<string | null>(null);
-    const [hoveredDataIndex, setHoveredDataIndex] = useState<number | null>(null);
+    const [loadedRecordsCount, setLoadedRecordsCount] = useState(100); // Start with first 100 records
+    const [loadingMore, setLoadingMore] = useState(false);
+    const scrollViewportRef = useRef<HTMLDivElement>(null);
 
     // Reset editing state when trace changes
     useEffect(() => {
         setEditingField(null);
         setEditingDataIndex(null);
         setHoveredField(null);
-        setHoveredDataIndex(null);
+        setLoadedRecordsCount(100); // Reset to initial batch
+        scrollViewportRef.current?.scrollTo(0, 0); // Scroll to top
     }, [selectedTrace]);
 
     // We'll use a wider width to accommodate descriptions and data
@@ -67,7 +72,17 @@ export const TraceDetailsPanel: React.FC<TraceDetailsPanelProps> = ({ selectedTr
         setEditingDataIndex(null);
     };
 
-
+    const loadMoreRecords = () => {
+        if (!traceData) return;
+        if (loadedRecordsCount < traceData.length) {
+            setLoadingMore(true);
+            // Use setTimeout to simulate async loading and prevent blocking
+            setTimeout(() => {
+                setLoadedRecordsCount(prev => Math.min(prev + 100, traceData.length));
+                setLoadingMore(false);
+            }, 100);
+        }
+    };
 
     return (
         <Paper
@@ -92,15 +107,15 @@ export const TraceDetailsPanel: React.FC<TraceDetailsPanelProps> = ({ selectedTr
                         <CloseButton onClick={onClose} />
                     </Group>
 
-                    <Tabs value={activeTab} onChange={setActiveTab} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    <Tabs value={activeTab} onChange={setActiveTab} variant="outline" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                         <Tabs.List>
-                            <Tabs.Tab value="header">Header</Tabs.Tab>
-                            <Tabs.Tab value="data">Data</Tabs.Tab>
+                            <Tabs.Tab leftSection={<IconTable size={12} stroke={1.5} />} style={{ fontSize: '11px', padding: '15px 10px', height: '24px', outline: 'none' }} value="header">Header</Tabs.Tab>
+                            <Tabs.Tab leftSection={<IconWaveSine size={12} stroke={1.5} />} style={{ fontSize: '11px', padding: '15px 10px', height: '24px', outline: 'none' }} value="data">Data</Tabs.Tab>
                         </Tabs.List>
 
                         <Tabs.Panel value="header" style={{ flex: 1, overflow: 'hidden', paddingTop: '12px' }}>
                             <ScrollArea style={{ height: '100%', minWidth: '300px' }}>
-                                <Table striped withTableBorder withColumnBorders>
+                                <Table withTableBorder withColumnBorders>
                                     <Table.Tbody>
                                         {selectedTrace && Object.entries(selectedTrace.header).map(([key, value]) => {
                                             const headerInfo = TRACE_HEADER_DESCRIPTIONS[key];
@@ -168,112 +183,87 @@ export const TraceDetailsPanel: React.FC<TraceDetailsPanelProps> = ({ selectedTr
 
                         <Tabs.Panel value="data" style={{ flex: 1, overflow: 'hidden', paddingTop: '12px', display: 'flex', flexDirection: 'column' }}>
                             {traceData ? (
-                                <Box style={{ flex: 1, minWidth: '300px' }}>
-                                    <Table striped withTableBorder withColumnBorders style={{ tableLayout: 'fixed' }}>
-                                        <Table.Thead>
-                                            <Table.Tr>
-                                                <Table.Th style={{ textAlign: 'center', width: '25%' }}>Sample</Table.Th>
-                                                <Table.Th style={{ textAlign: 'center', width: '35%' }}>Time (ms)</Table.Th>
-                                                <Table.Th style={{ textAlign: 'center', width: '40%' }}>Amplitude</Table.Th>
-                                            </Table.Tr>
-                                        </Table.Thead>
-                                    </Table>
-                                    <Box style={{ flex: 1, border: '1px solid #dee2e6', borderTop: 'none' }}>
-                                        <List
-                                            style={{ height: 600, width: '100%' }}
-                                            rowCount={traceData.length}
-                                            rowHeight={40}
-                                            overscanCount={5}
-                                            rowComponent={({ index, style }) => {
-                                                const value = traceData[index];
-                                                const sampleIntervalUs = selectedTrace.header.sampleInterval || 0;
-                                                const delayTimeMs = selectedTrace.header.delayRecordingTime || 0;
-                                                const timeMs = (index * sampleIntervalUs / 1000) + delayTimeMs;
-                                                const isEditing = editingDataIndex === index;
-                                                const isHovered = hoveredDataIndex === index;
-                                                const isEditable = !!onTraceDataUpdate;
+                                <>
+                                    <DataTable
+                                        withTableBorder
+                                        withColumnBorders
+                                        striped
+                                        highlightOnHover
+                                        height={600}
+                                        records={Array.from(traceData)
+                                            .slice(0, loadedRecordsCount) // Only show loaded records
+                                            .map((value, index) => ({
+                                                index,
+                                                sample: index + 1,
+                                                time: ((index * (selectedTrace.header.sampleInterval || 0) / 1000) + (selectedTrace.header.delayRecordingTime || 0)).toFixed(2),
+                                                amplitude: value
+                                            }))}
+                                        fetching={loadingMore}
+                                        onScrollToBottom={loadMoreRecords}
+                                        scrollViewportRef={scrollViewportRef}
+                                        columns={[
+                                            {
+                                                accessor: 'sample',
+                                                title: 'Sample',
+                                                textAlign: 'center',
+                                                width: '25%'
+                                            },
+                                            {
+                                                accessor: 'time',
+                                                title: 'Time (ms)',
+                                                textAlign: 'center',
+                                                width: '35%',
+                                                render: ({ time }) => <Text size="sm" ff="monospace">{time}</Text>
+                                            },
+                                            {
+                                                accessor: 'amplitude',
+                                                title: 'Amplitude',
+                                                textAlign: 'center',
+                                                width: '40%',
+                                                render: ({ amplitude, index }) => {
+                                                    const isEditing = editingDataIndex === index;
+                                                    const isEditable = !!onTraceDataUpdate;
 
-                                                return (
-                                                    <div
-                                                        style={{
-                                                            ...style,
-                                                            display: 'flex',
-                                                            borderBottom: '1px solid #dee2e6',
-                                                            backgroundColor: index % 2 === 0 ? '#f8f9fa' : '#ffffff',
-                                                            cursor: isEditable ? 'pointer' : 'default'
-                                                        }}
-                                                        onMouseEnter={() => isEditable && setHoveredDataIndex(index)}
-                                                        onMouseLeave={() => setHoveredDataIndex(null)}
-                                                    >
-                                                        <div style={{
-                                                            width: '25%',
-                                                            textAlign: 'center',
-                                                            padding: '8px',
-                                                            borderRight: '1px solid #dee2e6',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}>
-                                                            <Text size="sm">{index + 1}</Text>
-                                                        </div>
-                                                        <div style={{
-                                                            width: '35%',
-                                                            textAlign: 'center',
-                                                            padding: '8px',
-                                                            borderRight: '1px solid #dee2e6',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}>
-                                                            <Text size="sm" ff="monospace">
-                                                                {timeMs.toFixed(2)}
-                                                            </Text>
-                                                        </div>
-                                                        <div
-                                                            style={{
-                                                                width: '40%',
-                                                                textAlign: 'center',
-                                                                padding: '8px',
-                                                                backgroundColor: isHovered && !isEditing ? 'rgba(0, 123, 255, 0.1)' : undefined,
-                                                                transition: 'background-color 0.2s',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center'
+                                                    return isEditing ? (
+                                                        <NumberInput
+                                                            value={amplitude}
+                                                            onChange={(val) => {
+                                                                const numVal = typeof val === 'number' ? val : parseFloat(val as string) || 0;
+                                                                handleDataUpdate(index, numVal);
                                                             }}
-                                                            onClick={() => isEditable && !isEditing && setEditingDataIndex(index)}
+                                                            onBlur={() => setEditingDataIndex(null)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') setEditingDataIndex(null);
+                                                                if (e.key === 'Escape') setEditingDataIndex(null);
+                                                            }}
+                                                            size="xs"
+                                                            hideControls
+                                                            step={0.0001}
+                                                            decimalScale={4}
+                                                            styles={{ input: { textAlign: 'center', fontFamily: 'monospace' } }}
+                                                            autoFocus
+                                                        />
+                                                    ) : (
+                                                        <Text
+                                                            size="sm"
+                                                            ff="monospace"
+                                                            style={{ cursor: isEditable ? 'pointer' : 'default' }}
+                                                            onClick={() => isEditable && setEditingDataIndex(index)}
                                                         >
-                                                            {isEditing ? (
-                                                                <NumberInput
-                                                                    value={value}
-                                                                    onChange={(val) => {
-                                                                        const numVal = typeof val === 'number' ? val : parseFloat(val as string) || 0;
-                                                                        handleDataUpdate(index, numVal);
-                                                                    }}
-                                                                    onBlur={() => setEditingDataIndex(null)}
-                                                                    onKeyDown={(e) => {
-                                                                        if (e.key === 'Enter') setEditingDataIndex(null);
-                                                                        if (e.key === 'Escape') setEditingDataIndex(null);
-                                                                    }}
-                                                                    size="xs"
-                                                                    hideControls
-                                                                    step={0.0001}
-                                                                    decimalScale={4}
-                                                                    styles={{ input: { textAlign: 'center', fontFamily: 'monospace' } }}
-                                                                    autoFocus
-                                                                />
-                                                            ) : (
-                                                                <Text size="sm" ff="monospace">
-                                                                    {value.toExponential(4)}
-                                                                </Text>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            }}
-                                            rowProps={{}}
-                                        />
+                                                            {amplitude.toExponential(4)}
+                                                        </Text>
+                                                    );
+                                                }
+                                            }
+                                        ]}
+                                    />
+                                    <Box p="xs" style={{ borderTop: '1px solid #dee2e6', backgroundColor: '#f8f9fa' }}>
+                                        <Text size="xs" c="dimmed" ta="center">
+                                            Showing {loadedRecordsCount} of {traceData.length} samples
+                                            {loadedRecordsCount < traceData.length}
+                                        </Text>
                                     </Box>
-                                </Box>
+                                </>
                             ) : (
                                 <Text c="dimmed" ta="center" mt="md">
                                     No trace data available

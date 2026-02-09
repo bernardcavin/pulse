@@ -1033,7 +1033,7 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
                     top: 0,
                     left: 0,
                     display: displayDensity ? 'block' : 'none',
-                    backgroundColor: 'white'
+                    backgroundColor: '#ffffffca'
                 }}
             />
             <canvas
