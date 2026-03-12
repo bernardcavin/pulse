@@ -4,7 +4,9 @@ import { DataTable } from 'mantine-datatable';
 import 'mantine-datatable/styles.css';
 import type { SegyTraceHeader, SegyData } from '../utils/SegyParser';
 import { TRACE_HEADER_DESCRIPTIONS } from '../utils/TraceHeaderDescriptions';
-import { IconTable, IconWaveSine } from '@tabler/icons-react';
+import { IconTable, IconWaveSine, IconChartLine } from '@tabler/icons-react';
+import type { SpectrumResult, WindowType } from '../utils/SignalProcessing';
+import { SpectrumVisualization } from './SpectrumVisualization';
 
 interface TraceDetailsPanelProps {
     selectedTrace: { index: number; header: SegyTraceHeader } | null;
@@ -13,9 +15,22 @@ interface TraceDetailsPanelProps {
     onClose: () => void;
     onTraceHeaderUpdate?: (traceIndex: number, updatedHeader: SegyTraceHeader) => void;
     onTraceDataUpdate?: (traceIndex: number, updatedData: Float32Array) => void;
+    spectrumData: SpectrumResult | null;
+    onComputeSpectrum: () => void;
+    isSpectrumLoading?: boolean;
 }
 
-export const TraceDetailsPanel: React.FC<TraceDetailsPanelProps> = ({ selectedTrace, segyData, isOpen, onClose, onTraceHeaderUpdate, onTraceDataUpdate }) => {
+export const TraceDetailsPanel: React.FC<TraceDetailsPanelProps> = ({
+    selectedTrace,
+    segyData,
+    isOpen,
+    onClose,
+    onTraceHeaderUpdate,
+    onTraceDataUpdate,
+    spectrumData,
+    onComputeSpectrum,
+    isSpectrumLoading = false
+}) => {
     const [activeTab, setActiveTab] = useState<string | null>('header');
     const [editingField, setEditingField] = useState<string | null>(null);
     const [editingDataIndex, setEditingDataIndex] = useState<number | null>(null);
@@ -51,6 +66,15 @@ export const TraceDetailsPanel: React.FC<TraceDetailsPanelProps> = ({ selectedTr
     };
 
     const traceData = getTraceData();
+
+    // Auto-compute spectrum when Spectrum tab is opened
+    useEffect(() => {
+        if (activeTab === 'spectrum' && selectedTrace && !spectrumData) {
+            console.log("Auto-computing spectrum for trace", selectedTrace.index);
+            // Trigger spectrum computation via callback
+            onComputeSpectrum();
+        }
+    }, [activeTab, selectedTrace?.index, spectrumData]); // Don't include onComputeSpectrum to avoid loops
 
     const handleHeaderUpdate = (key: string, value: number) => {
         if (!selectedTrace || !onTraceHeaderUpdate) return;
@@ -111,6 +135,7 @@ export const TraceDetailsPanel: React.FC<TraceDetailsPanelProps> = ({ selectedTr
                         <Tabs.List>
                             <Tabs.Tab leftSection={<IconTable size={12} stroke={1.5} />} style={{ fontSize: '11px', padding: '15px 10px', height: '24px', outline: 'none' }} value="header">Header</Tabs.Tab>
                             <Tabs.Tab leftSection={<IconWaveSine size={12} stroke={1.5} />} style={{ fontSize: '11px', padding: '15px 10px', height: '24px', outline: 'none' }} value="data">Data</Tabs.Tab>
+                            <Tabs.Tab leftSection={<IconChartLine size={12} stroke={1.5} />} style={{ fontSize: '11px', padding: '15px 10px', height: '24px', outline: 'none' }} value="spectrum">Spectrum</Tabs.Tab>
                         </Tabs.List>
 
                         <Tabs.Panel value="header" style={{ flex: 1, overflow: 'hidden', paddingTop: '12px' }}>
@@ -269,6 +294,18 @@ export const TraceDetailsPanel: React.FC<TraceDetailsPanelProps> = ({ selectedTr
                                     No trace data available
                                 </Text>
                             )}
+                        </Tabs.Panel>
+
+                        <Tabs.Panel value="spectrum" style={{ flex: 1, overflow: 'hidden', paddingTop: '12px' }}>
+                            <ScrollArea style={{ height: '100%', minWidth: '300px' }}>
+                                <SpectrumVisualization
+                                    spectrumData={spectrumData}
+                                    traceIndex={selectedTrace?.index}
+                                    canvasWidth={300}
+                                    canvasHeight={250}
+                                    isLoading={isSpectrumLoading}
+                                />
+                            </ScrollArea>
                         </Tabs.Panel>
                     </Tabs>
                 </>

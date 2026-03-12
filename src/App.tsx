@@ -4,11 +4,13 @@ import { ControlPanel } from './components/ControlPanel';
 import { TraceDetailsPanel } from './components/TraceDetailsPanel';
 import { SeismicViewer } from './components/SeismicViewer';
 import { ViewerToolbar, type ToolMode } from './components/ViewerToolbar';
+import { SpectrumPanel } from './components/SpectrumPanel';
 import type { SegyData, SegyBinaryHeader, SegyTraceHeader } from './utils/SegyParser';
 import { getAllHeaderKeys } from './utils/TraceHeaderDescriptions';
 import { SegyWriter } from './utils/SegyWriter';
 import { exportAsPNG, exportAsJPEG, exportAsPDF, exportAsASCII, getViewerCanvases } from './utils/ExportUtils';
-import { Loader, Button, Stack, Text, Title, Center, ActionIcon, Tooltip, Group } from '@mantine/core';
+import { computeSpectrum, compute2DSpectrum, type SpectrumResult, type WindowType } from './utils/SignalProcessing';
+import { Loader, Button, Stack, Text, Title, Center, ActionIcon, Tooltip, Group, Modal, Box } from '@mantine/core';
 import { IconFileInfo, IconUpload, IconWaveSine, IconSettings } from '@tabler/icons-react';
 import 'normalize.css';
 import './App.css';
@@ -48,6 +50,36 @@ function App() {
   const [zoom, setZoom] = useState<number>(1.0);
   const [fileMetadata, setFileMetadata] = useState<{ name: string; size: number; lastModified: number } | null>(null);
   const viewerContainerRef = useRef<HTMLDivElement>(null);
+
+  // Spectrum analysis states
+  const [isSpectrumPanelOpen, setIsSpectrumPanelOpen] = useState<boolean>(false);
+  const [spectrumData, setSpectrumData] = useState<SpectrumResult | null>(null); // For 2D selection spectrum
+  const [traceSpectrumData, setTraceSpectrumData] = useState<SpectrumResult | null>(null); // For single trace spectrum
+  const [isSpectrumLoading, setIsSpectrumLoading] = useState<boolean>(false); // Loading state
+  const [spectrumWindowType, setSpectrumWindowType] = useState<WindowType>('hanning');
+  const [spectrumTraceIndex, setSpectrumTraceIndex] = useState<number | null>(null);
+  const [spectrumSelection, setSpectrumSelection] = useState<{
+    traceStart: number;
+    traceEnd: number;
+    sampleStart: number;
+    sampleEnd: number;
+  } | null>(null);
+
+  // Multi-selection state for 2D spectrum
+  const SELECTION_COLORS = [
+    'rgba(59, 130, 246, 0.3)',   // Blue
+    'rgba(16, 185, 129, 0.3)',   // Green
+    'rgba(245, 158, 11, 0.3)',   // Orange
+    'rgba(239, 68, 68, 0.3)',    // Red
+    'rgba(168, 85, 247, 0.3)'    // Purple
+  ];
+
+  const [activeSpectrumSelections, setActiveSpectrumSelections] = useState<Array<{
+    id: string;
+    selection: { traceStart: number; traceEnd: number; sampleStart: number; sampleEnd: number };
+    color: string;
+    spectrumData: SpectrumResult;
+  }>>([]);
 
   // Editable data states
   const [editedSegyData, setEditedSegyData] = useState<SegyData | null>(null);
@@ -139,9 +171,84 @@ function App() {
     setEditedTextHeader(null);
     setSelectedTrace(null);
     setIsDetailsOpen(false);
+    setIsSpectrumPanelOpen(false);
+    setSpectrumData(null);
+    setActiveSpectrumSelections([]);
     setZoom(1.0);
     setOffsetX(0);
     setOffsetY(0);
+  };
+
+  // Spectrum analysis handler
+  const handleSpectrumAnalysis = (traceIndex: number) => {
+    if (!segyData || !header) return;
+
+    setIsSpectrumLoading(true); // Start loading
+
+    // Use setTimeout to allow UI to update before heavy computation
+    setTimeout(() => {
+      const samplesPerTrace = segyData.samplesPerTrace;
+      const start = traceIndex * samplesPerTrace;
+      const traceData = segyData.data.subarray(start, start + samplesPerTrace);
+      const sampleRateMs = header.sampleInterval ? header.sampleInterval / 1000 : 4;
+
+      const result = computeSpectrum(traceData, sampleRateMs, spectrumWindowType);
+      setTraceSpectrumData(result); // Use separate state for single trace
+      setSpectrumTraceIndex(traceIndex);
+      setSpectrumSelection(null); // Clear 2D selection when analyzing single trace
+      setIsSpectrumLoading(false); // End loading
+
+      // Open trace details panel on spectrum tab instead of spectrum panel
+      if (selectedTrace?.index !== traceIndex) {
+        const traceHeader = segyData.headers[traceIndex];
+        setSelectedTrace({ index: traceIndex, header: traceHeader });
+      }
+      setIsDetailsOpen(true);
+      // Don't open spectrum panel for single trace
+      setIsSpectrumPanelOpen(false);
+    }, 10);
+  };
+
+  // 2D Spectrum selection handler
+  const handle2DSpectrumSelection = (selection: {
+    traceStart: number;
+    traceEnd: number;
+    sampleStart: number;
+    sampleEnd: number;
+  }) => {
+    if (!segyData || !header) return;
+
+    console.log('handle2DSpectrumSelection called with selection:', selection);
+
+    const sampleRateMs = header.sampleInterval ? header.sampleInterval / 1000 : 4;
+
+    const result = compute2DSpectrum(
+      segyData.data,
+      selection,
+      segyData.samplesPerTrace,
+      sampleRateMs,
+      spectrumWindowType
+    );
+
+    console.log('2D Spectrum computed, result:', result);
+
+    // Add to active selections array
+    const newSelection = {
+      id: `selection-${Date.now()}`,
+      selection,
+      color: SELECTION_COLORS[activeSpectrumSelections.length % SELECTION_COLORS.length],
+      spectrumData: result
+    };
+
+    setActiveSpectrumSelections(prev => [...prev, newSelection]);
+
+    // Set current selection for display
+    setSpectrumData(result);
+    setSpectrumSelection(selection);
+    setSpectrumTraceIndex(null);
+
+    console.log('Opening 2D spectrum panel');
+    setIsSpectrumPanelOpen(true);
   };
   // Responsive canvas
   useEffect(() => {
@@ -293,252 +400,279 @@ function App() {
     }
   };
 
+
   return (
-    <div className="app-container" style={{ display: 'flex', flexDirection: 'column' }}>
-
-      {/* Hidden file input - always available for welcome screen */}
-      <input
-        type="file"
-        accept=".sgy,.segy"
-        style={{ display: 'none' }}
-        id="hidden-file-input"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
-            handleFileUpload(file);
-          }
-        }}
-      />
-
-      {segyData && isControlPanelOpen && (
-        <ControlPanel
-          onFileUpload={handleFileUpload}
-          onRemoveFile={handleRemoveFile}
-          gain={gain}
-          onGainChange={setGain}
-          loading={loading}
-          segyData={segyData}
-          binaryHeader={header}
-          textHeader={textHeader}
-          onExport={handleExport}
-          onExportPNG={handleExportPNG}
-          onExportJPEG={handleExportJPEG}
-          onExportPDF={handleExportPDF}
-          onExportASCII={handleExportASCII}
-          displayWiggle={displayWiggle}
-          onDisplayWiggleChange={setDisplayWiggle}
-          displayDensity={displayDensity}
-          onDisplayDensityChange={setDisplayDensity}
-          wiggleFill={wiggleFill}
-          onWiggleFillChange={setWiggleFill}
-          scaleX={scaleX}
-          onScaleXChange={setScaleX}
-          scaleY={scaleY}
-          onScaleYChange={setScaleY}
-          reverse={reverse}
-          onReverseChange={setReverse}
-          colorMap={colorMap}
-          onColorMapChange={setColorMap}
-          customColors={customColors}
-          onCustomColorsChange={setCustomColors}
-          agcEnabled={agcEnabled}
-          onAgcEnabledChange={setAgcEnabled}
-          agcWindow={agcWindow}
-          onAgcWindowChange={setAgcWindow}
-          showGridlines={showGridlines}
-          onShowGridlinesChange={setShowGridlines}
-          allAvailableHeaders={allAvailableHeaders}
-          selectedXAxisHeaders={selectedXAxisHeaders}
-          onSelectedXAxisHeadersChange={setSelectedXAxisHeaders}
-          wiggleFillColors={wiggleFillColors}
-          onWiggleFillColorsChange={setWiggleFillColors}
-          fileMetadata={fileMetadata}
-          onClose={() => setIsControlPanelOpen(false)}
-        />
-      )}
-
-      {/* Toggle button when control panel is hidden */}
-      {segyData && !isControlPanelOpen && (
-        <Tooltip label="Show Control Panel" position="bottom" withArrow>
-          <ActionIcon
-            size="lg"
-            variant="filled"
-            color="blue"
-            onClick={() => setIsControlPanelOpen(true)}
-            radius="xl"
-            style={{
-              position: 'absolute',
-              top: 10,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 1000,
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)'
-            }}
-          >
-            <IconSettings size={18} />
-          </ActionIcon>
-        </Tooltip>
-      )}
-
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
-        <TraceDetailsPanel
-          selectedTrace={selectedTrace}
-          segyData={editedSegyData}
-          isOpen={isDetailsOpen}
-          onClose={() => setIsDetailsOpen(false)}
-          onTraceHeaderUpdate={handleTraceHeaderUpdate}
-          onTraceDataUpdate={handleTraceDataUpdate}
+    <>
+      <div className="app-container" style={{ display: 'flex', flexDirection: 'column' }}>
+        {/* Hidden file input - always available for welcome screen */}
+        <input
+          type="file"
+          accept=".sgy,.segy"
+          style={{ display: 'none' }}
+          id="hidden-file-input"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              handleFileUpload(file);
+            }
+          }}
         />
 
-        <div className="main-content" id="viewer-container" ref={viewerContainerRef} style={{ flex: 1, position: 'relative' }}>
-          {segyData && segyData.numTraces > 0 && (
-            <>
-              <ViewerToolbar
-                activeTool={activeTool}
-                onToolChange={handleToolChange}
-              />
-              {!isFileDetailsOpen &&
-                <Tooltip label="File Details" position="left" withArrow>
-                  <ActionIcon
-                    size="lg"
-                    variant="filled"
-                    color="blue"
-                    onClick={() => setIsFileDetailsOpen(true)}
-                    radius="xl"
-                    style={{
-                      position: 'absolute',
-                      top: 10,
-                      right: 10,
-                      zIndex: 1000,
-                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)'
-                    }}
-                  >
-                    <IconFileInfo size={18} />
-                  </ActionIcon>
-                </Tooltip>
-              }
-            </>
-          )}
-          {loading ? (
-            <Center style={{ height: '100%' }}>
-              <Stack align="center" gap="md">
-                <Loader size={50} />
-                <Text>Parsing SEG-Y file...</Text>
-              </Stack>
-            </Center>
-          ) : segyData && segyData.numTraces > 0 ? (
-            <SeismicViewer
-              data={segyData}
-              xAxisHeader={xAxisHeader}
-              header={header}
-              width={dimensions.width}
-              height={dimensions.height}
-              gain={gain}
-              displayWiggle={displayWiggle}
-              displayDensity={displayDensity}
-              wiggleFill={wiggleFill}
-              scaleX={scaleX}
-              scaleY={scaleY}
-              reverse={reverse}
-              colorMap={colorMap}
-              customColors={customColors}
-              offsetX={offsetX}
-              offsetY={offsetY}
-              onOffsetChange={(x, y) => { setOffsetX(x); setOffsetY(y); }}
-              agcEnabled={agcEnabled}
-              agcWindow={agcWindow}
-              showGridlines={showGridlines}
-              onTraceSelect={(index, header) => {
-                console.log('App: onTraceSelect called', index);
-                setSelectedTrace({ index, header });
-                setIsDetailsOpen(true);
+        {segyData && isControlPanelOpen && (
+          <ControlPanel
+            onFileUpload={handleFileUpload}
+            onRemoveFile={handleRemoveFile}
+            gain={gain}
+            onGainChange={setGain}
+            loading={loading}
+            segyData={segyData}
+            binaryHeader={header}
+            textHeader={textHeader}
+            onExport={handleExport}
+            onExportPNG={handleExportPNG}
+            onExportJPEG={handleExportJPEG}
+            onExportPDF={handleExportPDF}
+            onExportASCII={handleExportASCII}
+            displayWiggle={displayWiggle}
+            onDisplayWiggleChange={setDisplayWiggle}
+            displayDensity={displayDensity}
+            onDisplayDensityChange={setDisplayDensity}
+            wiggleFill={wiggleFill}
+            onWiggleFillChange={setWiggleFill}
+            scaleX={scaleX}
+            onScaleXChange={setScaleX}
+            scaleY={scaleY}
+            onScaleYChange={setScaleY}
+            reverse={reverse}
+            onReverseChange={setReverse}
+            colorMap={colorMap}
+            onColorMapChange={setColorMap}
+            customColors={customColors}
+            onCustomColorsChange={setCustomColors}
+            agcEnabled={agcEnabled}
+            onAgcEnabledChange={setAgcEnabled}
+            agcWindow={agcWindow}
+            onAgcWindowChange={setAgcWindow}
+            showGridlines={showGridlines}
+            onShowGridlinesChange={setShowGridlines}
+            allAvailableHeaders={allAvailableHeaders}
+            selectedXAxisHeaders={selectedXAxisHeaders}
+            onSelectedXAxisHeadersChange={setSelectedXAxisHeaders}
+            wiggleFillColors={wiggleFillColors}
+            onWiggleFillColorsChange={setWiggleFillColors}
+            fileMetadata={fileMetadata}
+            onClose={() => setIsControlPanelOpen(false)}
+          />
+        )}
+
+        {/* Toggle button when control panel is hidden */}
+        {segyData && !isControlPanelOpen && (
+          <Tooltip label="Show Control Panel" position="bottom" withArrow>
+            <ActionIcon
+              size="lg"
+              variant="filled"
+              color="blue"
+              onClick={() => setIsControlPanelOpen(true)}
+              radius="xl"
+              style={{
+                position: 'absolute',
+                top: 10,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 1000,
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)'
               }}
-              selectedTraceIndex={selectedTrace ? selectedTrace.index : null}
-              toolMode={activeTool}
-              zoom={zoom}
-              onZoomChange={setZoom}
-              selectedXAxisHeaders={selectedXAxisHeaders}
-              wiggleFillColors={wiggleFillColors}
-            />
-          ) : (
-            <Center style={{ height: '100%', backgroundColor: '#f8f9fa' }}>
-              <Stack align="center" p="xl" gap={0} style={{ maxWidth: '600px' }}>
-                <img
-                  src="/logo.png"
-                  alt="Pulse Logo"
-                  style={{
-                    width: '120px',
-                    height: '120px',
-                    objectFit: 'contain',
-                    opacity: 0.9
-                  }}
-                />
-                <Stack align="center" gap="sm">
-                  <Group>
-                    <Text fz="2.5rem" fw={700}> Welcome to</Text> <Text fz="2.5rem" fw={700} variant="gradient"
-                      gradient={{ from: 'blue', to: 'cyan', deg: 90 }}>Pulse</Text>
-                  </Group>
-                  <Text c="dimmed" ta="center" size="md" style={{ lineHeight: 1.6 }}>
-                    A modern web-based SEG-Y viewer for seismic data visualization and analysis.
-                    Pulse provides powerful tools to explore, edit, and export seismic datasets
-                    with an intuitive interface designed for geophysicists and data analysts.
-                  </Text>
-                  <Text c="dimmed" ta="center" size="xs" mt="xs" fw={500}>
-                    Supported formats: .sgy, .segy
-                  </Text>
-                </Stack>
-                <Group gap="md" mt="md">
-                  <Button
-                    variant="filled"
-                    size="md"
-                    radius="xl"
-                    leftSection={<IconUpload size={16} />}
-                    onClick={() => {
-                      const fileInput = document.getElementById('hidden-file-input') as HTMLInputElement;
-                      if (fileInput) {
-                        fileInput.click();
-                      }
-                    }}
-                  >
-                    Upload SEG-Y File
-                  </Button>
-                  <Button
-                    variant="default"
-                    size="md"
-                    radius="xl"
-                    leftSection={<IconWaveSine size={16} />}
-                    onClick={async () => {
-                      setLoading(true);
-                      try {
-                        const response = await fetch('/mock.sgy');
-                        const buffer = await response.arrayBuffer();
-                        await parseWithWorker(buffer);
-                      } catch (e) {
-                        console.error(e);
-                        alert('Failed to load mock data');
-                        setLoading(false);
-                      }
-                    }}
-                  >
-                    Try Sample Data
-                  </Button>
-                </Group>
-              </Stack>
-            </Center>
-          )}
-        </div>
+            >
+              <IconSettings size={18} />
+            </ActionIcon>
+          </Tooltip>
+        )}
 
-        <FileDetailsPanel
-          segyData={editedSegyData}
-          binaryHeader={editedBinaryHeader}
-          textHeader={editedTextHeader}
-          isOpen={isFileDetailsOpen}
-          onClose={() => setIsFileDetailsOpen(false)}
-          onBinaryHeaderUpdate={handleBinaryHeaderUpdate}
-          onTextHeaderUpdate={handleTextHeaderUpdate}
-        />
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
+          <TraceDetailsPanel
+            selectedTrace={selectedTrace}
+            segyData={editedSegyData}
+            isOpen={isDetailsOpen}
+            onClose={() => {
+              setIsDetailsOpen(false);
+              setSelectedTrace(null);
+            }}
+            onTraceHeaderUpdate={handleTraceHeaderUpdate}
+            onTraceDataUpdate={handleTraceDataUpdate}
+            spectrumData={traceSpectrumData}
+            onComputeSpectrum={() => {
+              if (selectedTrace) {
+                handleSpectrumAnalysis(selectedTrace.index);
+              }
+            }}
+            isSpectrumLoading={isSpectrumLoading}
+          />
+
+          <div className="main-content" id="viewer-container" ref={viewerContainerRef} style={{ flex: 1, position: 'relative' }}>
+            {segyData && segyData.numTraces > 0 && (
+              <>
+                <ViewerToolbar
+                  activeTool={activeTool}
+                  onToolChange={handleToolChange}
+                />
+                {!isFileDetailsOpen &&
+                  <Tooltip label="File Details" position="left" withArrow>
+                    <ActionIcon
+                      size="lg"
+                      variant="filled"
+                      color="blue"
+                      onClick={() => setIsFileDetailsOpen(true)}
+                      radius="xl"
+                      style={{
+                        position: 'absolute',
+                        top: 10,
+                        right: 10,
+                        zIndex: 1000,
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)'
+                      }}
+                    >
+                      <IconFileInfo size={18} />
+                    </ActionIcon>
+                  </Tooltip>
+                }
+              </>
+            )}
+            {loading ? (
+              <Center style={{ height: '100%' }}>
+                <Stack align="center" gap="md">
+                  <Loader size={50} />
+                  <Text>Parsing SEG-Y file...</Text>
+                </Stack>
+              </Center>
+            ) : segyData && segyData.numTraces > 0 ? (
+              <SeismicViewer
+                data={segyData}
+                xAxisHeader={xAxisHeader}
+                header={header}
+                width={dimensions.width}
+                height={dimensions.height}
+                gain={gain}
+                displayWiggle={displayWiggle}
+                displayDensity={displayDensity}
+                wiggleFill={wiggleFill}
+                scaleX={scaleX}
+                scaleY={scaleY}
+                reverse={reverse}
+                colorMap={colorMap}
+                customColors={customColors}
+                offsetX={offsetX}
+                offsetY={offsetY}
+                onOffsetChange={(x, y) => { setOffsetX(x); setOffsetY(y); }}
+                agcEnabled={agcEnabled}
+                agcWindow={agcWindow}
+                showGridlines={showGridlines}
+                onTraceSelect={(index, header) => {
+                  console.log('App: onTraceSelect called', index);
+                  setSelectedTrace({ index, header });
+                  setIsDetailsOpen(true);
+                }}
+                selectedTraceIndex={selectedTrace ? selectedTrace.index : null}
+                selectedTraceForPanel={isDetailsOpen && selectedTrace ? selectedTrace.index : null}
+                toolMode={activeTool}
+                zoom={zoom}
+                onZoomChange={setZoom}
+                selectedXAxisHeaders={selectedXAxisHeaders}
+                wiggleFillColors={wiggleFillColors}
+                onSpectrumSelectionComplete={handle2DSpectrumSelection}
+                activeSpectrumSelections={activeSpectrumSelections}
+              />
+            ) : (
+              <Center style={{ height: '100%', backgroundColor: '#f8f9fa' }}>
+                <Stack align="center" p="xl" gap={0} style={{ maxWidth: '600px' }}>
+                  <img
+                    src="/logo.png"
+                    alt="Pulse Logo"
+                    style={{
+                      width: '120px',
+                      height: '120px',
+                      objectFit: 'contain',
+                      opacity: 0.9
+                    }}
+                  />
+                  <Stack align="center" gap="sm">
+                    <Group>
+                      <Text fz="2.5rem" fw={700}> Welcome to</Text> <Text fz="2.5rem" fw={700} variant="gradient"
+                        gradient={{ from: 'blue', to: 'cyan', deg: 90 }}>Pulse</Text>
+                    </Group>
+                    <Text c="dimmed" ta="center" size="md" style={{ lineHeight: 1.6 }}>
+                      A modern web-based SEG-Y viewer for seismic data visualization and analysis.
+                      Pulse provides powerful tools to explore, edit, and export seismic datasets
+                      with an intuitive interface designed for geophysicists and data analysts.
+                    </Text>
+                    <Text c="dimmed" ta="center" size="xs" mt="xs" fw={500}>
+                      Supported formats: .sgy, .segy
+                    </Text>
+                  </Stack>
+                  <Group gap="md" mt="md">
+                    <Button
+                      variant="filled"
+                      size="md"
+                      radius="xl"
+                      leftSection={<IconUpload size={16} />}
+                      onClick={() => {
+                        const fileInput = document.getElementById('hidden-file-input') as HTMLInputElement;
+                        if (fileInput) {
+                          fileInput.click();
+                        }
+                      }}
+                    >
+                      Upload SEG-Y File
+                    </Button>
+                    <Button
+                      variant="default"
+                      size="md"
+                      radius="xl"
+                      leftSection={<IconWaveSine size={16} />}
+                      onClick={async () => {
+                        setLoading(true);
+                        try {
+                          const response = await fetch('/mock.sgy');
+                          const buffer = await response.arrayBuffer();
+                          await parseWithWorker(buffer);
+                        } catch (e) {
+                          console.error(e);
+                          alert('Failed to load mock data');
+                          setLoading(false);
+                        }
+                      }}
+                    >
+                      Try Sample Data
+                    </Button>
+                  </Group>
+                </Stack>
+              </Center>
+            )}
+          </div>
+
+          <SpectrumPanel
+            spectrumData={spectrumData}
+            isOpen={isSpectrumPanelOpen}
+            onClose={() => {
+              setIsSpectrumPanelOpen(false);
+              setActiveSpectrumSelections([]);
+            }}
+            traceIndex={spectrumTraceIndex}
+            selection={spectrumSelection}
+            activeSelections={activeSpectrumSelections}
+          />
+
+          <FileDetailsPanel
+            segyData={editedSegyData}
+            binaryHeader={editedBinaryHeader}
+            textHeader={editedTextHeader}
+            isOpen={isFileDetailsOpen}
+            onClose={() => setIsFileDetailsOpen(false)}
+            onBinaryHeaderUpdate={handleBinaryHeaderUpdate}
+            onTextHeaderUpdate={handleTextHeaderUpdate}
+          />
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 

@@ -416,41 +416,43 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         <Fieldset legend="Wiggle Fill" p="sm" style={{ minWidth: '200px', height: '138px' }}>
                             <Stack gap="xs">
                                 <Text size="10px" c="dimmed" mb={2}>Fill wiggle traces with color</Text>
-                                <Radio.Group
-                                    value={wiggleFill}
-                                    onChange={(value) => onWiggleFillChange(value as 'none' | 'pos' | 'neg')}
-                                    size="xs"
-                                >
-                                    <Stack gap={4}>
-                                        <Radio label="No Fill" value="none" disabled={loading || !displayWiggle} size="xs" />
-                                        <Radio label="Positive (+)" value="pos" disabled={loading || !displayWiggle} size="xs" />
-                                        <Radio label="Negative (−)" value="neg" disabled={loading || !displayWiggle} size="xs" />
-                                    </Stack>
-                                </Radio.Group>
-                                {wiggleFill === 'pos' && (
-                                    <Group gap="xs" align="center" mt={4}>
-                                        <Text size="xs">Color:</Text>
-                                        <ColorInput
-                                            value={wiggleFillColors.positive}
-                                            onChange={(val) => onWiggleFillColorsChange({ ...wiggleFillColors, positive: val })}
-                                            disabled={loading}
-                                            size="xs"
-                                            w={100}
-                                        />
-                                    </Group>
-                                )}
-                                {wiggleFill === 'neg' && (
-                                    <Group gap="xs" align="center" mt={4}>
-                                        <Text size="xs">Color:</Text>
-                                        <ColorInput
-                                            value={wiggleFillColors.negative}
-                                            onChange={(val) => onWiggleFillColorsChange({ ...wiggleFillColors, negative: val })}
-                                            disabled={loading}
-                                            size="xs"
-                                            w={100}
-                                        />
-                                    </Group>
-                                )}
+                                <Group>
+                                    <Radio.Group
+                                        value={wiggleFill}
+                                        onChange={(value) => onWiggleFillChange(value as 'none' | 'pos' | 'neg')}
+                                        size="xs"
+                                    >
+                                        <Stack gap={4}>
+                                            <Radio label="No Fill" value="none" disabled={loading || !displayWiggle} size="xs" />
+                                            <Radio label="Positive (+)" value="pos" disabled={loading || !displayWiggle} size="xs" />
+                                            <Radio label="Negative (−)" value="neg" disabled={loading || !displayWiggle} size="xs" />
+                                        </Stack>
+                                    </Radio.Group>
+                                    {wiggleFill === 'pos' && (
+                                        <Group gap="xs" align="center" mt={4}>
+                                            <Text size="xs">Color:</Text>
+                                            <ColorInput
+                                                value={wiggleFillColors.positive}
+                                                onChange={(val) => onWiggleFillColorsChange({ ...wiggleFillColors, positive: val })}
+                                                disabled={loading}
+                                                size="xs"
+                                                w={100}
+                                            />
+                                        </Group>
+                                    )}
+                                    {wiggleFill === 'neg' && (
+                                        <Group gap="xs" align="center" mt={4}>
+                                            <Text size="xs">Color:</Text>
+                                            <ColorInput
+                                                value={wiggleFillColors.negative}
+                                                onChange={(val) => onWiggleFillColorsChange({ ...wiggleFillColors, negative: val })}
+                                                disabled={loading}
+                                                size="xs"
+                                                w={100}
+                                            />
+                                        </Group>
+                                    )}
+                                </Group>
                             </Stack>
                         </Fieldset>
 
@@ -600,23 +602,25 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                         size="xs"
                                         styles={{ description: { fontSize: '9px' } }}
                                     />
-                                    <Divider orientation='vertical' />
+
                                     {agcEnabled && (
-                                        <Group gap="xs" align="center">
-                                            <Text size="xs" w={80}>Window (ms):</Text>
-                                            <NumberInput
-                                                value={agcWindow}
-                                                onChange={(val) => onAgcWindowChange(typeof val === 'number' ? val : parseFloat(val as string))}
-                                                min={10}
-                                                max={2000}
-                                                step={10}
-                                                disabled={loading}
-                                                w={80}
-                                                size="xs"
-                                                hideControls
-                                            />
-                                            <Text size="10px" c="dimmed">ms</Text>
-                                        </Group>
+                                        <>
+                                            <Divider orientation='vertical' />
+                                            <Group gap="xs" align="center">
+                                                <Text size="xs" w={80}>Window (ms):</Text>
+                                                <NumberInput
+                                                    value={agcWindow}
+                                                    onChange={(val) => onAgcWindowChange(typeof val === 'number' ? val : parseFloat(val as string))}
+                                                    min={10}
+                                                    max={2000}
+                                                    step={10}
+                                                    disabled={loading}
+                                                    w={80}
+                                                    size="xs"
+                                                    hideControls
+                                                />
+                                                <Text size="10px" c="dimmed">ms</Text>
+                                            </Group></>
                                     )}
                                 </Group>
                             </Stack>

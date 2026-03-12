@@ -8,10 +8,11 @@ import {
     IconZoomOut,
     IconHandGrab,
     IconHandFinger,
-    IconHandStop
+    IconHandStop,
+    IconChartLine
 } from '@tabler/icons-react';
 
-export type ToolMode = 'move' | 'pick' | 'zoom-fit' | 'zoom-window' | 'zoom-in' | 'zoom-out' | null;
+export type ToolMode = 'move' | 'pick' | 'zoom-fit' | 'zoom-window' | 'zoom-in' | 'zoom-out' | 'spectrum-select' | null;
 
 interface ViewerToolbarProps {
     activeTool: ToolMode;
@@ -63,6 +64,22 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({ activeTool, onTool
                     }}
                 >
                     <IconHandFinger size={18} />
+                </ActionIcon>
+            </Tooltip>
+
+            <Tooltip label="Spectrum Selection" position="right" withArrow>
+                <ActionIcon
+                    variant={activeTool === 'spectrum-select' ? 'filled' : 'default'}
+                    color={activeTool === 'spectrum-select' ? 'blue' : 'gray'}
+                    size="lg"
+                    onClick={() => {
+                        // Cursor tools cannot be deactivated - always keep one active
+                        if (activeTool !== 'spectrum-select') {
+                            onToolChange('spectrum-select');
+                        }
+                    }}
+                >
+                    <IconChartLine size={18} />
                 </ActionIcon>
             </Tooltip>
 

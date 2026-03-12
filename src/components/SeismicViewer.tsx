@@ -26,12 +26,24 @@ interface SeismicViewerProps {
     agcWindow: number;
     onTraceSelect?: (traceIndex: number, header: any) => void;
     selectedTraceIndex?: number | null;
+    selectedTraceForPanel?: number | null;
     showGridlines: boolean;
     toolMode: ToolMode;
     zoom: number;
     onZoomChange?: (zoom: number) => void;
     selectedXAxisHeaders: string[];
     wiggleFillColors: { positive: string; negative: string };
+    onSpectrumSelectionComplete?: (selection: {
+        traceStart: number;
+        traceEnd: number;
+        sampleStart: number;
+        sampleEnd: number;
+    }) => void;
+    activeSpectrumSelections?: Array<{
+        id: string;
+        selection: { traceStart: number; traceEnd: number; sampleStart: number; sampleEnd: number };
+        color: string;
+    }>;
 }
 
 
@@ -67,12 +79,15 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
     agcWindow,
     onTraceSelect,
     selectedTraceIndex,
+    selectedTraceForPanel,
     showGridlines,
     toolMode,
     zoom,
     onZoomChange,
     selectedXAxisHeaders,
-    wiggleFillColors
+    wiggleFillColors,
+    onSpectrumSelectionComplete,
+    activeSpectrumSelections = []
 }) => {
 
     const densityCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -96,6 +111,14 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
     const [isGrabbing, setIsGrabbing] = useState(false);
     const [hoveredTrace, setHoveredTrace] = useState<number | null>(null);
     const [zoomRect, setZoomRect] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
+    const [spectrumRect, setSpectrumRect] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
+
+    // Zoom optimization refs
+    const accumulatedZoomRef = useRef(1);
+    const zoomTimeoutRef = useRef<number | null>(null);
+    const isZoomingRef = useRef(false);
+    const zoomMousePosRef = useRef({ x: 0, y: 0 }); // Track initial mouse position
+    const zoomBaseStateRef = useRef({ zoom: 1, offsetX: 0, offsetY: 0 }); // Track base state
 
     const handleMouseDown = (e: React.MouseEvent) => {
         if (toolMode === 'zoom-window') {
@@ -105,6 +128,16 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
             setZoomRect({ startX: mouseX, startY: mouseY, endX: mouseX, endY: mouseY });
+            return;
+        }
+
+        if (toolMode === 'spectrum-select') {
+            const canvas = canvas2dRef.current;
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            setSpectrumRect({ startX: mouseX, startY: mouseY, endX: mouseX, endY: mouseY });
             return;
         }
 
@@ -125,10 +158,25 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
             return;
         }
 
+        if (toolMode === 'spectrum-select' && spectrumRect) {
+            const canvas = canvas2dRef.current;
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            setSpectrumRect({ ...spectrumRect, endX: mouseX, endY: mouseY });
+            return;
+        }
+
         if (!isDragging.current) {
             // Hover logic only when pick mode is active
             if (toolMode !== 'pick') {
-                setHoveredTrace(null);
+                // Keep trace highlighted if panel is open
+                if (selectedTraceForPanel !== null && selectedTraceForPanel !== undefined) {
+                    setHoveredTrace(selectedTraceForPanel);
+                } else {
+                    setHoveredTrace(null);
+                }
                 return;
             }
 
@@ -157,7 +205,13 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
         const dx = e.clientX - dragStartMousePos.current.x;
         const dy = e.clientY - dragStartMousePos.current.y;
 
-        onOffsetChange(dragStartOffset.current.x + dx, dragStartOffset.current.y + dy);
+        // Apply visual transform instead of re-rendering
+        const transform = `translate(${dx}px, ${dy}px)`;
+        if (densityCanvasRef.current) densityCanvasRef.current.style.transform = transform;
+        if (canvas2dRef.current) canvas2dRef.current.style.transform = transform;
+        if (highlightCanvasRef.current) highlightCanvasRef.current.style.transform = transform;
+        if (axisCanvasRef.current) axisCanvasRef.current.style.transform = transform;
+        if (zoomRectCanvasRef.current) zoomRectCanvasRef.current.style.transform = transform;
     };
 
     const handleMouseUp = (e: React.MouseEvent) => {
@@ -195,6 +249,86 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
             return;
         }
 
+        if (toolMode === 'spectrum-select' && spectrumRect) {
+            const canvas = canvas2dRef.current;
+            if (!canvas) return;
+
+            const rectWidth = Math.abs(spectrumRect.endX - spectrumRect.startX);
+            const rectHeight = Math.abs(spectrumRect.endY - spectrumRect.startY);
+
+            if (rectWidth > 10 && rectHeight > 10) {
+                // Convert pixel coordinates to trace and sample indices
+                const minX = Math.min(spectrumRect.startX, spectrumRect.endX);
+                const maxX = Math.max(spectrumRect.startX, spectrumRect.endX);
+                const minY = Math.min(spectrumRect.startY, spectrumRect.endY);
+                const maxY = Math.max(spectrumRect.startY, spectrumRect.endY);
+
+                // Calculate trace indices
+                const baseTraceWidth = width / data.numTraces;
+                const traceWidth = baseTraceWidth * scaleX * zoom;
+
+                const gridMinX = (minX - offsetX);
+                const gridMaxX = (maxX - offsetX);
+
+                let traceStart = Math.floor(gridMinX / traceWidth);
+                let traceEnd = Math.floor(gridMaxX / traceWidth);
+
+                // Clamp to valid range
+                traceStart = Math.max(0, Math.min(data.numTraces - 1, traceStart));
+                traceEnd = Math.max(0, Math.min(data.numTraces - 1, traceEnd));
+
+                // Handle reverse mode
+                if (reverse) {
+                    const temp = traceStart;
+                    traceStart = data.numTraces - 1 - traceEnd;
+                    traceEnd = data.numTraces - 1 - temp;
+                }
+
+                // Calculate sample indices
+                const baseSampleHeight = height / data.samplesPerTrace;
+                const sampleHeight = baseSampleHeight * scaleY * zoom;
+
+                const gridMinY = (minY - offsetY);
+                const gridMaxY = (maxY - offsetY);
+
+                let sampleStart = Math.floor(gridMinY / sampleHeight);
+                let sampleEnd = Math.floor(gridMaxY / sampleHeight);
+
+                // Clamp to valid range
+                sampleStart = Math.max(0, Math.min(data.samplesPerTrace - 1, sampleStart));
+                sampleEnd = Math.max(0, Math.min(data.samplesPerTrace - 1, sampleEnd));
+
+                // Call the callback
+                if (onSpectrumSelectionComplete) {
+                    onSpectrumSelectionComplete({
+                        traceStart,
+                        traceEnd,
+                        sampleStart,
+                        sampleEnd
+                    });
+                }
+            }
+
+            setSpectrumRect(null);
+            return;
+        }
+
+        if (isDragging.current) {
+            const dx = e.clientX - dragStartMousePos.current.x;
+            const dy = e.clientY - dragStartMousePos.current.y;
+
+            // Commit the new offset
+            onOffsetChange(dragStartOffset.current.x + dx, dragStartOffset.current.y + dy);
+
+            // Reset transforms (React will re-render with new offset)
+            const resetTransform = 'none';
+            if (densityCanvasRef.current) densityCanvasRef.current.style.transform = resetTransform;
+            if (canvas2dRef.current) canvas2dRef.current.style.transform = resetTransform;
+            if (highlightCanvasRef.current) highlightCanvasRef.current.style.transform = resetTransform;
+            if (axisCanvasRef.current) axisCanvasRef.current.style.transform = resetTransform;
+            if (zoomRectCanvasRef.current) zoomRectCanvasRef.current.style.transform = resetTransform;
+        }
+
         isDragging.current = false;
         setIsGrabbing(false);
 
@@ -220,11 +354,9 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
             const gridX = (mouseX - offsetX);
             const traceVisualIndex = Math.floor(gridX / traceWidth);
 
-            console.log('Click at', gridX, 'Index:', traceVisualIndex);
-
             if (traceVisualIndex >= 0 && traceVisualIndex < data.numTraces) {
                 const actualTraceIndex = reverse ? data.numTraces - 1 - traceVisualIndex : traceVisualIndex;
-                console.log('Selected Trace:', actualTraceIndex);
+
                 const header = data.headers[actualTraceIndex];
                 onTraceSelect(actualTraceIndex, header);
             }
@@ -234,26 +366,108 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
 
 
     const handleWheel = (e: React.WheelEvent) => {
-        const canvas = densityCanvasRef.current;
+        const canvas = canvas2dRef.current;
         if (!canvas) return;
 
         const rect = canvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
 
-        const gridX = (mouseX - offsetX) / zoom;
-        const gridY = (mouseY - offsetY) / zoom;
-
+        // Visual feedback immediately
         const zoomFactor = 0.1;
         const delta = e.deltaY > 0 ? (1 - zoomFactor) : (1 + zoomFactor);
 
-        const newZoom = Math.max(0.1, Math.min(50, zoom * delta));
+        // If starting a new zoom sequence, capture the base state and mouse position
+        if (!isZoomingRef.current) {
+            isZoomingRef.current = true;
+            accumulatedZoomRef.current = 1;
+            zoomMousePosRef.current = { x: mouseX, y: mouseY };
+            zoomBaseStateRef.current = { zoom, offsetX, offsetY };
+        }
 
-        const newOffsetX = mouseX - gridX * newZoom;
-        const newOffsetY = mouseY - gridY * newZoom;
+        // Accumulate zoom delta
+        const currentAccumulated = accumulatedZoomRef.current;
+        const targetAccumulated = currentAccumulated * delta;
 
-        if (onZoomChange) onZoomChange(newZoom);
-        onOffsetChange(newOffsetX, newOffsetY);
+        // Proposed new total zoom
+        const baseZoom = zoomBaseStateRef.current.zoom;
+        const proposedZoom = baseZoom * targetAccumulated;
+
+        // Clamp to limits (0.1 to 50)
+        if (proposedZoom < 0.1 || proposedZoom > 50) return;
+
+        accumulatedZoomRef.current = targetAccumulated;
+
+        // Calculate visual transform using the ORIGINAL mouse position
+        // This ensures zoom stays centered on the same point
+        const fixedMouseX = zoomMousePosRef.current.x;
+        const fixedMouseY = zoomMousePosRef.current.y;
+
+        const s = accumulatedZoomRef.current;
+        const tx = fixedMouseX * (1 - s);
+        const ty = fixedMouseY * (1 - s);
+
+        const transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+
+        if (densityCanvasRef.current) {
+            densityCanvasRef.current.style.transformOrigin = '0 0';
+            densityCanvasRef.current.style.transform = transform;
+        }
+        if (canvas2dRef.current) {
+            canvas2dRef.current.style.transformOrigin = '0 0';
+            canvas2dRef.current.style.transform = transform;
+        }
+        if (highlightCanvasRef.current) {
+            highlightCanvasRef.current.style.transformOrigin = '0 0';
+            highlightCanvasRef.current.style.transform = transform;
+        }
+        if (axisCanvasRef.current) {
+            axisCanvasRef.current.style.transformOrigin = '0 0';
+            axisCanvasRef.current.style.transform = transform;
+        }
+        if (zoomRectCanvasRef.current) {
+            zoomRectCanvasRef.current.style.transformOrigin = '0 0';
+            zoomRectCanvasRef.current.style.transform = transform;
+        }
+
+        // Debounce commit
+        if (zoomTimeoutRef.current) {
+            window.clearTimeout(zoomTimeoutRef.current);
+        }
+
+        zoomTimeoutRef.current = window.setTimeout(() => {
+            isZoomingRef.current = false;
+
+            // Calculate final state using base state and fixed mouse position
+            const finalZoom = zoomBaseStateRef.current.zoom * accumulatedZoomRef.current;
+            const baseOffsetX = zoomBaseStateRef.current.offsetX;
+            const baseOffsetY = zoomBaseStateRef.current.offsetY;
+            const baseZoom = zoomBaseStateRef.current.zoom;
+
+            // Grid point at the fixed mouse position (using base state)
+            const gridX = (fixedMouseX - baseOffsetX) / baseZoom;
+            const gridY = (fixedMouseY - baseOffsetY) / baseZoom;
+
+            // Calculate new offset to keep this grid point at the same screen position
+            const newOffsetX = fixedMouseX - gridX * finalZoom;
+            const newOffsetY = fixedMouseY - gridY * finalZoom;
+
+            // Reset transforms
+            const resetTransform = 'none';
+            if (densityCanvasRef.current) densityCanvasRef.current.style.transform = resetTransform;
+            if (canvas2dRef.current) canvas2dRef.current.style.transform = resetTransform;
+            if (highlightCanvasRef.current) highlightCanvasRef.current.style.transform = resetTransform;
+            if (axisCanvasRef.current) axisCanvasRef.current.style.transform = resetTransform;
+            if (zoomRectCanvasRef.current) zoomRectCanvasRef.current.style.transform = resetTransform;
+
+            // Reset accumulator
+            accumulatedZoomRef.current = 1;
+
+            // Commit state
+            if (onZoomChange) onZoomChange(finalZoom);
+            onOffsetChange(newOffsetX, newOffsetY);
+
+        }, 150); // 150ms debounce
     };
 
     // State for virtualization
@@ -315,7 +529,6 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
             return;
         }
 
-        console.time('ProcessTraces');
         const processedTraces = new Array(numToProcess);
         const sampleRateMs = header?.sampleInterval ? header.sampleInterval / 1000 : 4;
         const allData = data.data;
@@ -336,7 +549,6 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
                 processedTraces[i] = rawTrace;
             }
         }
-        console.timeEnd('ProcessTraces');
 
         processedDataRef.current = {
             start,
@@ -731,153 +943,151 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        let rafId: number;
-        const render = () => {
-            ctx.clearRect(0, 0, width, height);
+        // Render immediately when dependencies change (no requestAnimationFrame loop)
+        ctx.clearRect(0, 0, width, height);
 
-            const baseTraceWidth = width / numTraces;
-            const baseSampleHeight = height / samplesPerTrace;
+        const baseTraceWidth = width / numTraces;
+        const baseSampleHeight = height / samplesPerTrace;
 
-            const traceWidth = baseTraceWidth * scaleX * zoom;
-            const sampleHeight = baseSampleHeight * scaleY * zoom;
+        const traceWidth = baseTraceWidth * scaleX * zoom;
+        const sampleHeight = baseSampleHeight * scaleY * zoom;
 
-            if (!displayWiggle) {
-                return;
-            }
+        if (!displayWiggle) {
+            return;
+        }
 
-            ctx.save();
-            ctx.translate(offsetX, offsetY);
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
 
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 1;
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
 
-            const visibleStartTrace = Math.max(0, Math.floor(-offsetX / traceWidth) - 1);
-            const visibleEndTrace = Math.min(numTraces, Math.ceil((-offsetX + width) / traceWidth) + 1);
+        const visibleStartTrace = Math.max(0, Math.floor(-offsetX / traceWidth) - 1);
+        const visibleEndTrace = Math.min(numTraces, Math.ceil((-offsetX + width) / traceWidth) + 1);
 
-            const sampleStep = Math.max(1, Math.floor(1 / (scaleY * zoom)));
-            const sampleRateMs = header?.sampleInterval ? header.sampleInterval / 1000 : 4;
-            const processedCache = processedDataRef.current;
+        const sampleStep = Math.max(1, Math.floor(1 / (scaleY * zoom)));
+        const sampleRateMs = header?.sampleInterval ? header.sampleInterval / 1000 : 4;
+        const processedCache = processedDataRef.current;
 
-            const allData = data.data;
+        const allData = data.data;
 
-            for (let t = visibleStartTrace; t < visibleEndTrace; t++) {
-                const traceIndex = reverse ? numTraces - 1 - t : t;
+        for (let t = visibleStartTrace; t < visibleEndTrace; t++) {
+            const traceIndex = reverse ? numTraces - 1 - t : t;
 
-                // Construct trace data view
-                const start = traceIndex * samplesPerTrace;
-                // Be careful with subarray, it's cheap but creates an object
-                let traceData: Float32Array | number[];
+            // Construct trace data view
+            const start = traceIndex * samplesPerTrace;
+            // Be careful with subarray, it's cheap but creates an object
+            let traceData: Float32Array | number[];
 
-                // Try to get cached
-                if (processedCache && t >= processedCache.start && t < processedCache.start + processedCache.traces.length) {
-                    const localIndex = t - processedCache.start;
-                    traceData = processedCache.traces[localIndex] as Float32Array;
+            // Try to get cached
+            if (processedCache && t >= processedCache.start && t < processedCache.start + processedCache.traces.length) {
+                const localIndex = t - processedCache.start;
+                traceData = processedCache.traces[localIndex] as Float32Array;
+            } else {
+                const rawTraceData = allData.subarray(start, start + samplesPerTrace);
+                if (agcEnabled) {
+                    traceData = applyAGC(rawTraceData, sampleRateMs, agcWindow);
                 } else {
-                    const rawTraceData = allData.subarray(start, start + samplesPerTrace);
-                    if (agcEnabled) {
-                        traceData = applyAGC(rawTraceData, sampleRateMs, agcWindow);
-                    } else {
-                        traceData = rawTraceData;
-                    }
-                }
-
-                const xCenter = (t + 0.5) * traceWidth;
-
-                ctx.beginPath();
-                const startX = xCenter + (traceData[0] * gain * traceWidth);
-                ctx.moveTo(startX, 0);
-
-                for (let s = 1; s < samplesPerTrace; s += sampleStep) {
-                    const y = s * sampleHeight;
-                    const x = xCenter + (traceData[s] * gain * traceWidth);
-                    ctx.lineTo(x, y);
-                }
-
-                // Last sample
-                if ((samplesPerTrace - 1) % sampleStep !== 0) {
-                    const lastS = samplesPerTrace - 1;
-                    const y = lastS * sampleHeight;
-                    const x = xCenter + (traceData[lastS] * gain * traceWidth);
-                    ctx.lineTo(x, y);
-                }
-
-                ctx.stroke();
-
-                if (wiggleFill !== 'none') {
-                    ctx.lineTo(xCenter, (samplesPerTrace - 1) * sampleHeight);
-                    ctx.lineTo(xCenter, 0);
-                    ctx.lineTo(startX, 0);
-
-                    ctx.save();
-                    ctx.clip();
-
-                    if (wiggleFill === 'pos') {
-                        ctx.fillStyle = wiggleFillColors.positive;
-                        ctx.fillRect(xCenter, 0, numTraces * traceWidth, samplesPerTrace * sampleHeight);
-                    } else {
-                        ctx.fillStyle = wiggleFillColors.negative;
-                        ctx.fillRect(-width, 0, xCenter + width, samplesPerTrace * sampleHeight);
-                    }
-                    ctx.restore();
+                    traceData = rawTraceData;
                 }
             }
 
+            const xCenter = (t + 0.5) * traceWidth;
 
-            // Draw Axes
-            ctx.strokeStyle = '#000';
-            ctx.fillStyle = '#000';
-            ctx.font = '10px sans-serif';
-            ctx.lineWidth = 1;
+            ctx.beginPath();
+            const startX = xCenter + (traceData[0] * gain * traceWidth);
+            ctx.moveTo(startX, 0);
 
-            const xTickInterval = Math.max(1, Math.floor(numTraces / 10)); // ~10 ticks
-            for (let t = 0; t < numTraces; t += xTickInterval) {
-                const x = (t + 0.5) * traceWidth;
-                ctx.beginPath();
-                ctx.moveTo(x, (samplesPerTrace - 1) * sampleHeight);
-                ctx.lineTo(x, (samplesPerTrace - 1) * sampleHeight + 5);
-                ctx.stroke();
-
-                ctx.save();
-                ctx.textAlign = 'center';
-                ctx.fillText(`${t + 1}`, x, (samplesPerTrace - 1) * sampleHeight + 15);
-                ctx.restore();
-            }
-
-            // X-axis label
-            ctx.save();
-            ctx.textAlign = 'center';
-            ctx.font = '12px sans-serif';
-            ctx.fillText('Trace Number', (numTraces * traceWidth) / 2, (samplesPerTrace - 1) * sampleHeight + 30);
-            ctx.restore();
-
-            const yTickInterval = Math.max(1, Math.floor(samplesPerTrace / 10));
-            for (let s = 0; s < samplesPerTrace; s += yTickInterval) {
+            for (let s = 1; s < samplesPerTrace; s += sampleStep) {
                 const y = s * sampleHeight;
-                ctx.beginPath();
-                ctx.moveTo(0, y);
-                ctx.lineTo(-5, y);
-                ctx.stroke();
-                ctx.save();
-                ctx.textAlign = 'right';
-                ctx.fillText(`${s}`, -8, y + 3);
-                ctx.restore();
+                const x = xCenter + (traceData[s] * gain * traceWidth);
+                ctx.lineTo(x, y);
             }
 
+            // Last sample
+            if ((samplesPerTrace - 1) % sampleStep !== 0) {
+                const lastS = samplesPerTrace - 1;
+                const y = lastS * sampleHeight;
+                const x = xCenter + (traceData[lastS] * gain * traceWidth);
+                ctx.lineTo(x, y);
+            }
+
+            ctx.stroke();
+
+            if (wiggleFill !== 'none') {
+                ctx.lineTo(xCenter, (samplesPerTrace - 1) * sampleHeight);
+                ctx.lineTo(xCenter, 0);
+                ctx.lineTo(startX, 0);
+
+                ctx.save();
+                ctx.clip();
+
+                if (wiggleFill === 'pos') {
+                    ctx.fillStyle = wiggleFillColors.positive;
+                    ctx.fillRect(xCenter, 0, numTraces * traceWidth, samplesPerTrace * sampleHeight);
+                } else {
+                    ctx.fillStyle = wiggleFillColors.negative;
+                    ctx.fillRect(-width, 0, xCenter + width, samplesPerTrace * sampleHeight);
+                }
+                ctx.restore();
+            }
+        }
+
+
+        // Draw Axes
+        ctx.strokeStyle = '#000';
+        ctx.fillStyle = '#000';
+        ctx.font = '10px sans-serif';
+        ctx.lineWidth = 1;
+
+        const visibleTraces = numTraces / (scaleX * zoom);
+        const xTickInterval = Math.max(1, Math.floor(visibleTraces / 10)); // ~10 ticks visible
+        for (let t = 0; t < numTraces; t += xTickInterval) {
+            const x = (t + 0.5) * traceWidth;
+            ctx.beginPath();
+            ctx.moveTo(x, (samplesPerTrace - 1) * sampleHeight);
+            ctx.lineTo(x, (samplesPerTrace - 1) * sampleHeight + 5);
+            ctx.stroke();
+
             ctx.save();
-            ctx.translate(-40, (samplesPerTrace * sampleHeight) / 2);
-            ctx.rotate(-Math.PI / 2);
             ctx.textAlign = 'center';
-            ctx.font = '12px sans-serif';
-            ctx.fillText('Sample', 0, 0);
+            ctx.fillText(`${t + 1}`, x, (samplesPerTrace - 1) * sampleHeight + 15);
             ctx.restore();
+        }
 
+        // X-axis label
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('Trace Number', (numTraces * traceWidth) / 2, (samplesPerTrace - 1) * sampleHeight + 30);
+        ctx.restore();
 
-
+        const visibleSamples = samplesPerTrace / (scaleY * zoom);
+        const yTickInterval = Math.max(1, Math.floor(visibleSamples / 10));
+        for (let s = 0; s < samplesPerTrace; s += yTickInterval) {
+            const y = s * sampleHeight;
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(-5, y);
+            ctx.stroke();
+            ctx.save();
+            ctx.textAlign = 'right';
+            ctx.fillText(`${s}`, -8, y + 3);
             ctx.restore();
-        };
+        }
 
-        rafId = requestAnimationFrame(render);
-        return () => cancelAnimationFrame(rafId);
+        ctx.save();
+        ctx.translate(-40, (samplesPerTrace * sampleHeight) / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'center';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('Sample', 0, 0);
+        ctx.restore();
+
+
+
+        ctx.restore();
+
     }, [data, width, height, gain, displayWiggle, wiggleFill, scaleX, scaleY, reverse, offsetX, offsetY, displayDensity, zoom, agcEnabled, agcWindow, header, wiggleFillColors]);
 
     // Render axes separately
@@ -909,7 +1119,8 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
         // X-AXIS AT TOP - Multiple Headers
         const numHeaders = selectedXAxisHeaders.length;
         const headerRowHeight = 40; // Height for each header row (increased spacing)
-        const xTickInterval = Math.max(1, Math.floor(numTraces / 10));
+        const visibleTraces = numTraces / (scaleX * zoom);
+        const xTickInterval = Math.max(1, Math.floor(visibleTraces / 10));
 
         // Render each selected header
         selectedXAxisHeaders.forEach((headerKey, headerIndex) => {
@@ -965,7 +1176,8 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
         });
 
         // Y-AXIS (Time axis on the left)
-        const yTickInterval = Math.max(1, Math.floor(samplesPerTrace / 10));
+        const visibleSamples = samplesPerTrace / (scaleY * zoom);
+        const yTickInterval = Math.max(1, Math.floor(visibleSamples / 10));
         for (let s = 0; s < samplesPerTrace; s += yTickInterval) {
             const y = s * sampleHeight;
             const timeMs = s * sampleIntervalMs;
@@ -1022,6 +1234,93 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
 
     }, [data, header, width, height, scaleX, scaleY, offsetX, offsetY, xAxisHeader, reverse, zoom, hoveredTrace, gain, displayWiggle, wiggleFill, agcEnabled, agcWindow, showGridlines, selectedXAxisHeaders]);
 
+    // Draw zoom and spectrum selection rectangles
+    useEffect(() => {
+        const canvas = zoomRectCanvasRef.current;
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.clearRect(0, 0, width, height);
+
+        if (zoomRect) {
+            const minX = Math.min(zoomRect.startX, zoomRect.endX);
+            const minY = Math.min(zoomRect.startY, zoomRect.endY);
+            const rectWidth = Math.abs(zoomRect.endX - zoomRect.startX);
+            const rectHeight = Math.abs(zoomRect.endY - zoomRect.startY);
+
+            ctx.strokeStyle = 'rgba(0, 123, 255, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.strokeRect(minX, minY, rectWidth, rectHeight);
+
+            ctx.fillStyle = 'rgba(0, 123, 255, 0.1)';
+            ctx.fillRect(minX, minY, rectWidth, rectHeight);
+        }
+
+        if (spectrumRect) {
+            const minX = Math.min(spectrumRect.startX, spectrumRect.endX);
+            const minY = Math.min(spectrumRect.startY, spectrumRect.endY);
+            const rectWidth = Math.abs(spectrumRect.endX - spectrumRect.startX);
+            const rectHeight = Math.abs(spectrumRect.endY - spectrumRect.startY);
+
+            ctx.strokeStyle = 'rgba(34, 197, 94, 0.8)'; // Green
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.strokeRect(minX, minY, rectWidth, rectHeight);
+
+            ctx.fillStyle = 'rgba(34, 197, 94, 0.1)';
+            ctx.fillRect(minX, minY, rectWidth, rectHeight);
+
+            // Draw selection info
+            ctx.setLineDash([]);
+            ctx.fillStyle = 'rgba(34, 197, 94, 0.9)';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.fillText('Spectrum Selection', minX + 5, minY + 15);
+        }
+
+        // Draw active spectrum selections
+        if (activeSpectrumSelections && activeSpectrumSelections.length > 0) {
+            const baseTraceWidth = width / data.numTraces;
+            const traceWidth = baseTraceWidth * scaleX * zoom;
+            const baseSampleHeight = height / data.samplesPerTrace;
+            const sampleHeight = baseSampleHeight * scaleY * zoom;
+
+            activeSpectrumSelections.forEach((sel, index) => {
+                const { selection, color } = sel;
+
+                // Convert trace/sample indices to screen coordinates
+                let visualTraceStart = reverse ? data.numTraces - 1 - selection.traceEnd : selection.traceStart;
+                let visualTraceEnd = reverse ? data.numTraces - 1 - selection.traceStart : selection.traceEnd;
+
+                const minX = offsetX + visualTraceStart * traceWidth;
+                const maxX = offsetX + (visualTraceEnd + 1) * traceWidth;
+                const minY = offsetY + selection.sampleStart * sampleHeight;
+                const maxY = offsetY + (selection.sampleEnd + 1) * sampleHeight;
+
+                const rectWidth = maxX - minX;
+                const rectHeight = maxY - minY;
+
+                // Draw filled rectangle with selection color
+                ctx.fillStyle = color;
+                ctx.fillRect(minX, minY, rectWidth, rectHeight);
+
+                // Draw border with more opaque version of the same color
+                const borderColor = color.replace('0.3', '0.8');
+                ctx.strokeStyle = borderColor;
+                ctx.lineWidth = 2;
+                ctx.setLineDash([]);
+                ctx.strokeRect(minX, minY, rectWidth, rectHeight);
+
+                // Draw selection number
+                ctx.fillStyle = borderColor;
+                ctx.font = 'bold 14px sans-serif';
+                ctx.fillText(`#${index + 1}`, minX + 5, minY + 18);
+            });
+        }
+    }, [zoomRect, spectrumRect, width, height, activeSpectrumSelections, data, scaleX, scaleY, zoom, offsetX, offsetY, reverse]);
+
     return (
         <div style={{ position: 'relative', width, height }}>
             <canvas
@@ -1061,9 +1360,10 @@ export const SeismicViewer: React.FC<SeismicViewerProps> = ({
                     top: 0,
                     left: 0,
                     cursor: toolMode === 'zoom-window' ? 'crosshair' :
-                        toolMode === 'pick' ? (hoveredTrace !== null ? 'pointer' : 'default') :
-                            toolMode === 'move' ? (isGrabbing ? 'grabbing' : 'grab') :
-                                (isGrabbing ? 'grabbing' : 'grab'), // Default to grab behavior
+                        toolMode === 'spectrum-select' ? 'crosshair' :
+                            toolMode === 'pick' ? (hoveredTrace !== null ? 'pointer' : 'default') :
+                                toolMode === 'move' ? (isGrabbing ? 'grabbing' : 'grab') :
+                                    (isGrabbing ? 'grabbing' : 'grab'), // Default to grab behavior
                     pointerEvents: 'all'
                 }}
                 onMouseDown={handleMouseDown}
